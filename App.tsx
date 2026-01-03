@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Hero } from './components/Hero';
 import { AudioInput } from './components/AudioInput';
 import { AnalysisResult } from './components/AnalysisResult';
-import { analyzeAudioContent } from './services/geminiService';
+import { analyzeAudioContent, analyzeSongFromUrl } from './services/geminiService';
 import { AnalysisStatus, SongAnalysis, AudioMetadata } from './types';
 
 const App: React.FC = () => {
@@ -81,9 +81,47 @@ const App: React.FC = () => {
     }
   };
 
+  const processLink = async (url: string) => {
+    setStatus(AnalysisStatus.ANALYZING_AI); // Skip processing audio step for links
+    setError(null);
+    setAnalysis(null);
+    
+    // We try to extract a name from the URL for metadata
+    let fileName = "Online Link";
+    try {
+        const urlObj = new URL(url);
+        if (urlObj.hostname.includes('youtube') || urlObj.hostname.includes('youtu.be')) {
+            fileName = "YouTube Link";
+        } else if (urlObj.hostname.includes('spotify')) {
+            fileName = "Spotify Link";
+        } else {
+            fileName = urlObj.hostname;
+        }
+    } catch(e) {}
+
+    setMetadata({
+        fileName: fileName,
+        duration: 0 // We don't know duration for links
+    });
+
+    try {
+      const result = await analyzeSongFromUrl(url);
+      setAnalysis(result);
+      setStatus(AnalysisStatus.COMPLETE);
+    } catch (err: any) {
+      console.error(err);
+      setStatus(AnalysisStatus.ERROR);
+      setError(err instanceof Error ? err.message : "Failed to analyze link.");
+    }
+  };
+
   const handleAudioReady = (file: File) => {
     processAudio(file);
   };
+
+  const handleLinkReady = (url: string) => {
+    processLink(url);
+  }
 
   const handleReset = () => {
     setStatus(AnalysisStatus.IDLE);
@@ -99,7 +137,11 @@ const App: React.FC = () => {
       <main className="container mx-auto px-4 pb-12 relative z-10">
         
         {status === AnalysisStatus.IDLE && (
-           <AudioInput onAudioReady={handleAudioReady} status={status} />
+           <AudioInput 
+             onAudioReady={handleAudioReady} 
+             onLinkReady={handleLinkReady}
+             status={status} 
+           />
         )}
 
         {status === AnalysisStatus.PROCESSING_AUDIO && (
@@ -120,7 +162,7 @@ const App: React.FC = () => {
             </div>
             <h2 className="text-2xl font-bold text-white mb-2">CHORD-IA is listening...</h2>
             <p className="text-slate-400">
-              Detecting harmonic structures across the <strong>ENTIRE</strong> audio track. This may take a moment for longer songs.
+              Detecting harmonic structures and consulting global music knowledge base...
             </p>
           </div>
         )}
