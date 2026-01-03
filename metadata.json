@@ -1,0 +1,7 @@
+{
+  "name": "CHORD-IA",
+  "description": "Advanced AI-powered musical analysis tool capable of detecting complex chords, harmonies, modulations, and tensions from audio files or real-time recordings.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
