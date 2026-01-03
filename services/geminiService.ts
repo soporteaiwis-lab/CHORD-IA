@@ -7,35 +7,35 @@ const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 const analysisSchema: Schema = {
   type: Type.OBJECT,
   properties: {
-    key: { type: Type.STRING, description: "The tonal center or key of the piece (e.g., 'C Major', 'F# Minor')." },
-    timeSignature: { type: Type.STRING, description: "The detected time signature (e.g., '4/4', '6/8')." },
-    bpmEstimate: { type: Type.STRING, description: "An estimated tempo range (e.g., '120 bpm')." },
+    key: { type: Type.STRING, description: "The specific tonal center (e.g., 'Eb Dorian', 'C# Major', 'G Harmonic Minor')." },
+    timeSignature: { type: Type.STRING, description: "The detected time signature (e.g., '4/4', '12/8', '5/4')." },
+    bpmEstimate: { type: Type.STRING, description: "Accurate tempo estimate." },
     modulations: {
       type: Type.ARRAY,
       items: { type: Type.STRING },
-      description: "List of keys modulated to during the excerpt, if any."
+      description: "List of all key changes found."
     },
     complexityLevel: {
       type: Type.STRING,
       enum: ["Simple", "Intermediate", "Advanced", "Jazz/Complex"],
-      description: "Overall harmonic complexity."
+      description: "Harmonic complexity rating."
     },
-    summary: { type: Type.STRING, description: "A brief music theory analysis of the progression and style." },
+    summary: { type: Type.STRING, description: "Detailed theoretical analysis of harmonic movement, voice leading, and substitutions used." },
     chords: {
       type: Type.ARRAY,
       items: {
         type: Type.OBJECT,
         properties: {
-          timestamp: { type: Type.STRING, description: "Approximate time or bar number (e.g., '0:05' or 'Bar 1')." },
-          symbol: { type: Type.STRING, description: "The chord symbol (e.g., 'Cmaj9', 'G7b13', 'Ddim7')." },
-          quality: { type: Type.STRING, description: "Quality (Major, Minor, Dominant, Diminished, Augmented, Half-Dim)." },
+          timestamp: { type: Type.STRING, description: "Exact timestamp (e.g., '0:05')." },
+          symbol: { type: Type.STRING, description: "THE FULL, COMPLEX CHORD SYMBOL (e.g., 'F#maj13(#11)', 'Eb7(alt)', 'C/Bb'). Do not simplify." },
+          quality: { type: Type.STRING, description: "Detailed quality (e.g. Dominant 7th alt, Minor 11, Major 9)." },
           extensions: { 
             type: Type.ARRAY, 
             items: { type: Type.STRING },
-            description: "List of tensions/extensions found (e.g., '9', '#11', 'b13')."
+            description: "List of all intervals present (9, 11, 13, b9, #9, #11, b13, etc)."
           },
-          bassNote: { type: Type.STRING, description: "Bass note if inversion (e.g., 'G' for C/G). Leave empty if root position." },
-          confidence: { type: Type.NUMBER, description: "Confidence level 0-100." }
+          bassNote: { type: Type.STRING, description: "Specific bass note for inversions or slash chords." },
+          confidence: { type: Type.NUMBER, description: "Confidence 0-100." }
         },
         required: ["timestamp", "symbol", "quality", "confidence"]
       }
@@ -51,19 +51,23 @@ const cleanJson = (text: string) => {
 
 export const analyzeAudioContent = async (base64Data: string, mimeType: string): Promise<SongAnalysis> => {
   try {
-    // Using gemini-2.0-flash-exp which is highly capable of multimodal analysis and currently available in AI Studio
+    // We stick to gemini-2.0-flash-exp for high reliability and multimodal capabilities
     const modelId = "gemini-2.0-flash-exp"; 
 
     const prompt = `
-      Act as a world-class music theorist and virtuoso with perfect pitch. 
-      Analyze the provided audio file.
+      You are an expert Professor of Jazz Harmony and Music Theory with absolute pitch.
       
-      Task:
-      1. Identify the global Key and Time Signature.
-      2. Detect any modulations (key changes).
-      3. List the chords chronologically. Be extremely precise. 
-      4. Listen for complex harmonies: 7ths, 9ths, 11ths, 13ths, alterations (b5, #5, b9, #9), diminished, augmented, and inversions (Slash chords).
-      5. Determine the harmonic complexity level.
+      YOUR TASK: Perform a highly advanced harmonic analysis of the provided audio.
+      
+      STRICT RULES FOR CHORD DETECTION:
+      1. **DO NOT SIMPLIFY CHORDS.** This is for advanced musicians.
+      2. If you hear a C Major chord with a 7th, 9th, and sharp 11th, output "Cmaj13(#11)", NOT just "C" or "Cmaj7".
+      3. **DETECT TENSIONS:** Listen specifically for 9ths, 11ths, 13ths, and alterations (b9, #9, #11/b5, b13/#5).
+      4. **INVERSIONS:** If the bass is playing E on a C chord, output "C/E".
+      5. **SPECIFIC QUALITIES:** Distinguish between 'dim7', 'm7b5' (half-dim), 'aug7', 'sus4', 'sus2'.
+      6. **FUNCTIONAL HARMONY:** In the summary, analyze the progression using Roman Numerals (e.g., "ii-V-I in Ab", "Tritone substitution").
+      
+      Provide the most granular, precise, and complex analysis possible.
       
       Return the data strictly in the requested JSON format.
     `;
@@ -84,8 +88,8 @@ export const analyzeAudioContent = async (base64Data: string, mimeType: string):
       config: {
         responseMimeType: "application/json",
         responseSchema: analysisSchema,
-        systemInstruction: "You are CHORD-IA, an advanced AI music theory engine. Your goal is absolute harmonic accuracy.",
-        temperature: 0.1 // Lower temperature for more consistent, analytical results
+        systemInstruction: "You are CHORD-IA. You are a virtuoso music analyst. You never output simple chords if complex extensions exist. You always provide the full extended jazz symbol.",
+        temperature: 0.1 // Keep temperature low to force adherence to the audio facts
       }
     });
 
