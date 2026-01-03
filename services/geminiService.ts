@@ -4,17 +4,14 @@ import { SongAnalysis, AnalysisLevel } from "../types";
 // Initialize the API client
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-// --- ROBUST UTILS ---
+// --- UTILS ---
 
 const extractJSON = (text: string): any => {
   if (!text) throw new Error("Empty response from AI");
   
   let cleanText = text.trim();
-  
-  // 1. Remove Markdown Code Blocks
   cleanText = cleanText.replace(/```json/g, '').replace(/```/g, '');
   
-  // 2. Find the first '{' and last '}' to isolate JSON
   const firstBrace = cleanText.indexOf('{');
   const lastBrace = cleanText.lastIndexOf('}');
   
@@ -26,7 +23,7 @@ const extractJSON = (text: string): any => {
     return JSON.parse(cleanText);
   } catch (e) {
     console.error("JSON Parse Failed. Raw text:", text);
-    throw new Error("The AI analyzed the song but returned invalid data structure. Please try again.");
+    throw new Error("Analysis failed to produce valid JSON data. Please try again.");
   }
 };
 
@@ -34,24 +31,22 @@ const getLevelInstructions = (level: AnalysisLevel): string => {
   switch (level) {
     case 'Basic':
       return `
-      **MODE: BASIC (BEGINNER)**
-      - **Output ONLY Major and Minor Triads**.
-      - Simplify complex chords: Gmaj7 -> G, Dm9 -> Dm.
-      - NO extensions, NO slash chords.
+      **MODE: BASIC**
+      - Output ONLY Major/Minor Triads.
+      - Simplify Gmaj7 -> G, Dm9 -> Dm.
       `;
     case 'Intermediate':
       return `
       **MODE: INTERMEDIATE**
-      - Identify 7th chords (maj7, m7, dom7).
-      - Identify distinct Slash Chords.
-      - Simplify 9/11/13 extensions to 7ths.
+      - Identify 7th chords.
+      - Identify slash chords.
       `;
     case 'Advanced':
       return `
-      **MODE: ADVANCED (VIRTUOSO)**
-      - **Precise**: 9, 11, 13, #11, b13, alt.
-      - **Polychords**: Upper structures.
-      - **Inversions**: Exact bass notes.
+      **MODE: ADVANCED**
+      - Detect extensions (9, 11, 13).
+      - Detect altered dominants.
+      - Exact bass inversions.
       `;
     default:
       return "";
@@ -59,7 +54,7 @@ const getLevelInstructions = (level: AnalysisLevel): string => {
 };
 
 const COMMON_SCHEMA = `
-  STRICT JSON OUTPUT ONLY. NO MARKDOWN.
+  STRICT JSON OUTPUT ONLY.
   {
     "key": "string",
     "timeSignature": "string",
@@ -80,63 +75,32 @@ const COMMON_SCHEMA = `
   }
 `;
 
-// --- FAILOVER SYSTEM ---
+// --- RETRY LOGIC ---
 
-// Priority list of models to try. 
-// We start with Flash (fastest/best for audio), then fallback to alternatives.
-const AUDIO_MODELS = [
-  "gemini-1.5-flash",       // Primary: Fast, large context
-  "gemini-1.5-flash-002",   // Secondary: Updated experimental version
-  "gemini-1.5-pro"          // Tertiary: Heavy duty, slower but powerful
-];
+const MODEL_ID = "gemini-3-flash-preview"; 
+const MAX_RETRIES = 3;
+const BASE_DELAY = 2000;
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-async function generateWithFailover(
+async function generateWithRetry(
   contents: any, 
   config: any, 
-  attempt = 0
+  retries = 0
 ): Promise<any> {
-  const modelId = AUDIO_MODELS[attempt];
-  
-  if (!modelId) {
-    throw new Error("All AI models failed to respond. Please check your internet connection or try a smaller file.");
-  }
-
   try {
-    console.log(`Attempting analysis with: ${modelId} (Attempt ${attempt + 1}/${AUDIO_MODELS.length})`);
-    
-    // Explicitly set the model for this request
-    const response = await ai.models.generateContent({ 
-      model: modelId, 
-      contents, 
-      config 
-    });
-
-    if (!response || !response.text) {
-      throw new Error("Empty response");
-    }
-
-    return response;
-
+    console.log(`Analyzing with ${MODEL_ID} (Attempt ${retries + 1})`);
+    return await ai.models.generateContent({ model: MODEL_ID, contents, config });
   } catch (error: any) {
-    console.warn(`Model ${modelId} failed:`, error.message);
+    const msg = error.message || error.toString();
+    const isTransient = msg.includes("503") || msg.includes("429") || msg.includes("Busy") || msg.includes("Overloaded");
     
-    const isRetryable = 
-      error.message.includes("429") || 
-      error.message.includes("503") || 
-      error.message.includes("500") || 
-      error.message.includes("busy") ||
-      error.message.includes("overloaded") ||
-      error.message.includes("not found"); // sometimes implies model unavailable in region
-
-    if (isRetryable && attempt < AUDIO_MODELS.length - 1) {
-      console.log(`Switching to backup model...`);
-      await delay(1500); // Brief pause before switching
-      return generateWithFailover(contents, config, attempt + 1);
+    if (isTransient && retries < MAX_RETRIES) {
+      const waitTime = BASE_DELAY * Math.pow(2, retries);
+      console.warn(`Service Busy. Retrying in ${waitTime}ms...`);
+      await delay(waitTime);
+      return generateWithRetry(contents, config, retries + 1);
     }
-    
-    // If it's the last model or a fatal error, throw it up
     throw error;
   }
 }
@@ -148,25 +112,21 @@ export const analyzeAudioContent = async (base64Data: string, mimeType: string, 
   const formattedDuration = `${Math.floor(duration / 60)}:${Math.floor(duration % 60).toString().padStart(2, '0')}`;
   
   const prompt = `
-    You are an expert Session Musician with Absolute Pitch.
-    
+    Role: Absolute Pitch Audio Analyzer.
     INPUT: Audio File (${formattedDuration}).
+    TASK: Extract harmonic chord progression.
     
-    TASK: Analyze the harmony beat-by-beat.
-    
-    STRATEGY:
-    1. **Groove**: Find BPM/Time Signature.
-    2. **Bass**: Track the Root.
-    3. **Harmony**: Determine Quality & Extensions.
-    4. **Map**: Intro -> Verse -> Chorus.
+    STEPS:
+    1. Detect BPM & Key.
+    2. Track Root Movement.
+    3. Identify Chord Quality.
     
     ${levelPrompt}
 
-    CRITICAL:
-    - Tune to A=440Hz.
-    - Analyze FULL DURATION (0:00 to ${formattedDuration}).
-    - Do not hallucinate. If silence, skip.
-
+    RULES:
+    - Analyze from 0:00 to ${formattedDuration}.
+    - Tune A=440Hz.
+    
     ${COMMON_SCHEMA}
   `;
 
@@ -178,7 +138,7 @@ export const analyzeAudioContent = async (base64Data: string, mimeType: string, 
       ] 
     };
 
-    const response = await generateWithFailover(contents, {
+    const response = await generateWithRetry(contents, {
       responseMimeType: "application/json",
       temperature: 0.2,
       maxOutputTokens: 8192,
@@ -187,26 +147,24 @@ export const analyzeAudioContent = async (base64Data: string, mimeType: string, 
     return extractJSON(response.text);
 
   } catch (error: any) {
-    // Final catch-all for UI
-    console.error("Final Analysis Error:", error);
+    console.error("Analysis Error:", error);
     let msg = error.message || "Unknown error";
-    if (msg.includes("429")) msg = "Traffic limit reached. Please wait 1 minute.";
-    if (msg.includes("400")) msg = "The audio file might be corrupted or unsupported.";
+    if (msg.includes("404")) msg = "Model unavailable. Please try again later.";
+    if (msg.includes("429")) msg = "Server traffic high. Please wait a moment.";
     throw new Error(msg);
   }
 };
 
 export const analyzeSongFromUrl = async (url: string, level: AnalysisLevel): Promise<SongAnalysis> => {
   const levelPrompt = getLevelInstructions(level);
-  const modelId = "gemini-1.5-pro"; // Pro is best for text/search reasoning
-
+  
+  // We use the same powerful model for text reasoning as well
   const prompt = `
-    You are an expert Music Theorist.
-    
-    TASK: Analyze song at: "${url}"
+    Role: Music Theorist.
+    TASK: Analyze song at URL: "${url}"
     
     1. Identify song/artist.
-    2. Find accurate studio harmony.
+    2. Get studio harmony.
     3. Output JSON.
     
     ${levelPrompt}
@@ -216,18 +174,14 @@ export const analyzeSongFromUrl = async (url: string, level: AnalysisLevel): Pro
 
   try {
     const contents = { parts: [{ text: prompt }] };
-    const response = await ai.models.generateContent({
-        model: modelId,
-        contents,
-        config: {
-            responseMimeType: "application/json",
-            tools: [{ googleSearch: {} }],
-            maxOutputTokens: 8192,
-        }
+    const response = await generateWithRetry(contents, {
+        responseMimeType: "application/json",
+        tools: [{ googleSearch: {} }],
+        maxOutputTokens: 8192,
     });
 
     return extractJSON(response.text);
   } catch (error: any) {
-    throw new Error("Failed to analyze link: " + error.message);
+    throw new Error("Link analysis failed: " + error.message);
   }
 };

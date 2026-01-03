@@ -151,7 +151,7 @@ const App: React.FC = () => {
           {status === AnalysisStatus.PROCESSING_AUDIO && (
             <div className="text-center mt-20">
               <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-indigo-500 border-t-transparent mb-4"></div>
-              <p className="text-indigo-300 text-lg font-medium">Preparing Audio Engine...</p>
+              <p className="text-indigo-300 text-lg font-medium">Preparing Audio...</p>
             </div>
           )}
 
@@ -166,9 +166,9 @@ const App: React.FC = () => {
               </div>
               <h2 className="text-2xl font-bold text-white mb-2">Analyzing Harmonics...</h2>
               <div className="text-slate-400 space-y-2">
-                <p>Scanning full frequency spectrum...</p>
-                <p className="text-xs text-indigo-400 animate-pulse">
-                  (If the primary server is busy, we will automatically switch to backup models)
+                <p>Gemini 3 Flash Preview is listening to the audio...</p>
+                <p className="text-xs text-indigo-400">
+                  Detecting modulations and chord extensions.
                 </p>
               </div>
             </div>
@@ -208,7 +208,7 @@ const App: React.FC = () => {
 
       <footer className="py-12 text-center text-slate-600 text-sm border-t border-slate-900 bg-slate-950/30 backdrop-blur-sm mt-auto">
         <div className="flex flex-col items-center gap-3">
-          <p className="font-semibold text-indigo-400/90 mb-2">CHORD-IA Powered by Gemini 1.5 (Multi-Model Engine)</p>
+          <p className="font-semibold text-indigo-400/90 mb-2">CHORD-IA Powered by Gemini 3 Flash Preview</p>
           
           <div className="flex flex-col items-center gap-1">
             <p className="text-slate-400">
