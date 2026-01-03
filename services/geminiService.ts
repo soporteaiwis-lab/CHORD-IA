@@ -31,27 +31,25 @@ const getLevelInstructions = (level: AnalysisLevel): string => {
   switch (level) {
     case 'Basic':
       return `
-      **MODE: BASIC / BEGINNER (STRICT)**
-      - **OUTPUT ONLY TRIADS**: Major or Minor chords ONLY.
-      - **ABSOLUTELY NO EXTENSIONS**: Do not output 7, 9, 11, 13, sus, dim, aug.
-      - **NO SLASH CHORDS**: Output just the root chord (e.g. if C/E, output C).
-      - **EXAMPLE**: If the harmony is Gmaj7 -> Em9 -> Cmaj7, you MUST output: G -> Em -> C.
-      - **GOAL**: Match the simplicity of basic chord charts (like Moises basic mode).
+      **STRICT CONSTRAINT: BASIC MODE**
+      1. Output **ONLY TRIADS** (Major/Minor).
+      2. **Forbidden**: 7ths, 9ths, sus, dim, aug, slash chords.
+      3. **Simplification**: If you hear 'Gmaj7', output 'G'. If you hear 'Cm9', output 'Cm'.
+      4. **Goal**: Create a chord sheet for a beginner campfire guitarist.
       `;
     case 'Intermediate':
       return `
-      **MODE: INTERMEDIATE**
-      - Identify basic extensions: 7ths (maj7, min7, 7) and sus4/sus2.
-      - Identify slash chords (inversions) if they are prominent (e.g., D/F#).
-      - Ignore upper structures (9, 11, 13) unless essential to the song's identity.
+      **CONSTRAINT: INTERMEDIATE MODE**
+      1. Identify **7th chords** (maj7, min7, 7).
+      2. Identify **Slash chords** (inversions) e.g., C/G.
+      3. Ignore upper extensions (9, 11, 13) unless they are the main melody note.
       `;
     case 'Advanced':
       return `
-      **MODE: ADVANCED / JAZZ**
-      - FULL SPECTRUM ANALYSIS.
-      - Detect specific extensions: 9, 11, 13, #11, b13, alt.
-      - Exact qualities: Augmented, Diminished, Half-Diminished.
-      - Detect Polychords and complex voicings.
+      **CONSTRAINT: ADVANCED JAZZ MODE**
+      1. **Micro-Analysis**: Detect every extension (9, 11, 13, #11, b13, alt).
+      2. **Exact Quality**: Distinguish between dim7, m7b5, aug7.
+      3. **Polychords**: Identify complex upper structures.
       `;
     default:
       return "";
@@ -59,9 +57,9 @@ const getLevelInstructions = (level: AnalysisLevel): string => {
 };
 
 const COMMON_SCHEMA = `
-  Output MUST be valid JSON matching this structure:
+  Return raw JSON only. No markdown formatting.
   {
-    "key": "string (e.g. 'G Major')",
+    "key": "string",
     "timeSignature": "string",
     "bpmEstimate": "string",
     "modulations": ["string"],
@@ -69,30 +67,32 @@ const COMMON_SCHEMA = `
     "summary": "string",
     "chords": [
       {
-        "timestamp": "string (e.g. '0:00', '1:45')",
+        "timestamp": "string (e.g. '0:00')",
         "symbol": "string",
         "quality": "string",
         "extensions": ["string"],
-        "bassNote": "string (optional)",
+        "bassNote": "string",
         "confidence": number
       }
     ]
   }
 `;
 
-// Helper to handle the API call with fallback logic
-async function generateWithFallback(
+// Helper to handle the API call
+async function generateAnalysis(
   prompt: string, 
   base64Data?: string, 
   mimeType?: string,
   tools?: any[]
 ): Promise<SongAnalysis> {
   
-  // 1. Try the PRO model first (Best reasoning for theory)
+  // We use gemini-1.5-pro-latest because it has the best long-context audio handling
+  // and is less prone to "hallucinating" generic chords than the experimental 2.0 models on large files.
+  const modelId = "gemini-1.5-pro-latest";
+  
+  console.log(`Analyzing with ${modelId}...`);
+
   try {
-    console.log("Attempting analysis with Gemini 2.0 Pro...");
-    const modelId = "gemini-2.0-pro-exp-02-05";
-    
     const contents: any = { parts: [{ text: prompt }] };
     if (base64Data && mimeType) {
       contents.parts.unshift({ inlineData: { mimeType, data: base64Data } });
@@ -104,41 +104,16 @@ async function generateWithFallback(
       config: {
         responseMimeType: "application/json",
         tools: tools,
-        temperature: 0.0, // Zero temperature for maximum determinism and accuracy
-        maxOutputTokens: 65536
+        temperature: 0.2, // Slight temp needed for audio interpretation
+        maxOutputTokens: 8192, // High token limit for long chord lists
       }
     });
 
     return extractJSON(response.text);
 
   } catch (error: any) {
-    console.warn("Gemini Pro failed, falling back to Flash:", error.message);
-    
-    // 2. Fallback to FLASH model (Best for audio handling if Pro fails)
-    try {
-      const modelId = "gemini-2.0-flash-exp";
-      
-      const contents: any = { parts: [{ text: prompt }] };
-      if (base64Data && mimeType) {
-        contents.parts.unshift({ inlineData: { mimeType, data: base64Data } });
-      }
-
-      const response = await ai.models.generateContent({
-        model: modelId,
-        contents,
-        config: {
-          responseMimeType: "application/json",
-          tools: tools,
-          temperature: 0.0, // Zero temperature
-          maxOutputTokens: 65536
-        }
-      });
-      
-      return extractJSON(response.text);
-    } catch (finalError: any) {
-      handleGeminiError(finalError);
-      throw finalError;
-    }
+    handleGeminiError(error);
+    throw error;
   }
 }
 
@@ -147,62 +122,47 @@ export const analyzeAudioContent = async (base64Data: string, mimeType: string, 
   const formattedDuration = `${Math.floor(duration / 60)}:${Math.floor(duration % 60).toString().padStart(2, '0')}`;
   
   const prompt = `
-    You are an expert Audio Engineer and Music Theorist with Absolute Pitch (A=440Hz).
+    Role: You are a dedicated Audio Signal Processing AI. 
     
-    INPUT METADATA:
-    - Total Duration: ${formattedDuration} (${Math.round(duration)} seconds).
+    INPUT DATA:
+    - Audio File Length: ${formattedDuration}
     
-    TASK: 
-    Perform a high-precision harmonic analysis of the provided audio file.
+    TASK:
+    Extract the harmonic chord progression from the provided audio stream.
+    
+    CRITICAL INSTRUCTIONS (DO NOT HALLUCINATE):
+    1. **IGNORE INTERNAL KNOWLEDGE**: Do not attempt to guess the song name or use existing database knowledge. Analyze *only* the sound waves provided in this request.
+    2. **LISTEN TO THE BASS**: The bass frequency (40Hz-200Hz) determines the root note.
+    3. **LISTEN TO THE MIDS**: The 3rd and 7th intervals (200Hz-1kHz) determine the quality (Major/Minor).
+    4. **FULL DURATION**: You MUST provide chord timestamps from 0:00 up to ${formattedDuration}. Do not stop early.
     
     ${levelPrompt}
 
-    CRITICAL INSTRUCTIONS FOR ACCURACY:
-    1. **TUNING CHECK**: Calibrate your listening to Standard Tuning (A=440Hz). Do not transpose. 
-       - *Common Error Warning*: Do not confuse a Perfect 5th (e.g., G Major vs D Major) or Relative Minor (G Major vs E Minor). 
-       - Listen to the Bass Guitar carefully to define the root.
-    
-    2. **FULL COVERAGE (MANDATORY)**:
-       - You MUST detect chords for the ENTIRE duration of the file.
-       - The last chord event timestamp must be close to ${formattedDuration}.
-       - Do not stop analyzing in the middle.
-    
-    3. **TIMING**:
-       - Provide chord changes exactly where they happen.
-       - If a chord holds for 4 bars, do not repeat it unnecessarily, but ensure the timeline is clear.
-
-    4. **OUTPUT VALIDATION**:
-       - Verify: Does the analysis start with the correct Key Center?
-       - Verify: Does the analysis end at the end of the file?
-
+    OUTPUT FORMAT:
     ${COMMON_SCHEMA}
   `;
 
-  return generateWithFallback(prompt, base64Data, mimeType);
+  return generateAnalysis(prompt, base64Data, mimeType);
 };
 
 export const analyzeSongFromUrl = async (url: string, level: AnalysisLevel): Promise<SongAnalysis> => {
   const levelPrompt = getLevelInstructions(level);
 
   const prompt = `
-    You are an expert Music Theorist.
+    Role: Music Theorist.
     
-    URL: "${url}"
+    TASK: Analyze the chord progression of the song at this URL: "${url}"
     
-    STEP 1: Identify the song (Title, Artist, Version).
-    STEP 2: Retrieve the OFFICIAL studio chord progression for this track.
-    STEP 3: Generate the JSON analysis.
-
+    1. Identify the exact version (Studio, Live, or Cover).
+    2. Retrieve the *accurate* sheet music data.
+    3. Convert it to the requested format.
+    
     ${levelPrompt}
 
-    INSTRUCTIONS:
-    - Ensure the chords span the full length of the song.
-    - Be precise with Key detection (Major vs Minor).
-    
     ${COMMON_SCHEMA}
   `;
 
-  return generateWithFallback(prompt, undefined, undefined, [{ googleSearch: {} }]);
+  return generateAnalysis(prompt, undefined, undefined, [{ googleSearch: {} }]);
 };
 
 const handleGeminiError = (error: any) => {

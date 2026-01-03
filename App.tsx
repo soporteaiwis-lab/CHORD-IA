@@ -18,7 +18,6 @@ const App: React.FC = () => {
       reader.readAsDataURL(file);
       reader.onload = () => {
         if (typeof reader.result === 'string') {
-          // Remove "data:audio/xyz;base64," prefix
           const base64 = reader.result.split(',')[1];
           resolve(base64);
         } else {
@@ -29,17 +28,16 @@ const App: React.FC = () => {
     });
   };
 
-  // Helper to get audio duration
   const getAudioDuration = (file: File): Promise<number> => {
     return new Promise((resolve) => {
         const objectUrl = URL.createObjectURL(file);
         const audio = new Audio();
         audio.onloadedmetadata = () => {
-            URL.revokeObjectURL(objectUrl);
+            // Do NOT revoke immediately, we need it for the waveform
             resolve(audio.duration);
         };
         audio.onerror = () => {
-            resolve(0); // If fails, just return 0
+            resolve(0);
         };
         audio.src = objectUrl;
     });
@@ -66,6 +64,9 @@ const App: React.FC = () => {
     setMetadata(null);
 
     try {
+      // Create a persistent URL for the file to be used in the Waveform Player
+      const fileUrl = URL.createObjectURL(file);
+
       const [base64Data, duration] = await Promise.all([
           fileToBase64(file),
           getAudioDuration(file)
@@ -73,14 +74,14 @@ const App: React.FC = () => {
       
       setMetadata({
           fileName: file.name.replace(/\.[^/.]+$/, ""),
-          duration: duration
+          duration: duration,
+          audioUrl: fileUrl // Pass URL to metadata
       });
 
       const mimeType = getCorrectMimeType(file);
       
       setStatus(AnalysisStatus.ANALYZING_AI);
       
-      // Pass duration to ensure full coverage
       const result = await analyzeAudioContent(base64Data, mimeType, level, duration);
       
       setAnalysis(result);
@@ -101,13 +102,7 @@ const App: React.FC = () => {
     let fileName = "Online Link";
     try {
         const urlObj = new URL(url);
-        if (urlObj.hostname.includes('youtube') || urlObj.hostname.includes('youtu.be')) {
-            fileName = "YouTube Link";
-        } else if (urlObj.hostname.includes('spotify')) {
-            fileName = "Spotify Link";
-        } else {
-            fileName = urlObj.hostname;
-        }
+        fileName = urlObj.hostname;
     } catch(e) {}
 
     setMetadata({
@@ -116,7 +111,6 @@ const App: React.FC = () => {
     });
 
     try {
-      // Pass the selected level to the service
       const result = await analyzeSongFromUrl(url, level);
       setAnalysis(result);
       setStatus(AnalysisStatus.COMPLETE);
@@ -160,7 +154,7 @@ const App: React.FC = () => {
           {status === AnalysisStatus.PROCESSING_AUDIO && (
             <div className="text-center mt-20">
               <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-indigo-500 border-t-transparent mb-4"></div>
-              <p className="text-indigo-300 text-lg font-medium">Processing Audio File...</p>
+              <p className="text-indigo-300 text-lg font-medium">Processing Audio...</p>
             </div>
           )}
 
@@ -173,11 +167,11 @@ const App: React.FC = () => {
                   <div className="w-3 h-3 bg-pink-500 rounded-full animate-bounce"></div>
                 </div>
               </div>
-              <h2 className="text-2xl font-bold text-white mb-2">CHORD-IA is listening...</h2>
+              <h2 className="text-2xl font-bold text-white mb-2">Analyzing Harmonics...</h2>
               <p className="text-slate-400">
-                Calibrating A=440Hz tuning and performing deep harmonic analysis...
+                Scanning audio spectrum for chord structures using Gemini 1.5 Pro...
                 <br/>
-                <span className="text-xs text-slate-500 mt-2 block">(Analysis covers full duration)</span>
+                <span className="text-xs text-slate-500 mt-2 block">(Large context window enabled for full song accuracy)</span>
               </p>
             </div>
           )}
@@ -216,7 +210,7 @@ const App: React.FC = () => {
 
       <footer className="py-12 text-center text-slate-600 text-sm border-t border-slate-900 bg-slate-950/30 backdrop-blur-sm mt-auto">
         <div className="flex flex-col items-center gap-3">
-          <p className="font-semibold text-indigo-400/90 mb-2">CHORD-IA Powered by Gemini 2.0 Pro / Flash (Hybrid)</p>
+          <p className="font-semibold text-indigo-400/90 mb-2">CHORD-IA Powered by Gemini 1.5 Pro</p>
           
           <div className="flex flex-col items-center gap-1">
             <p className="text-slate-400">

@@ -31,6 +31,7 @@ export interface SongAnalysis {
 export interface AudioMetadata {
   fileName: string;
   duration: number; // in seconds
+  audioUrl?: string; // URL for the audio blob/file for playback
 }
 
 export interface AudioState {
