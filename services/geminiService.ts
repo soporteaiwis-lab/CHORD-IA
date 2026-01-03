@@ -34,53 +34,56 @@ const extractJSON = (text: string): any => {
 };
 
 const COMMON_PROMPT_INSTRUCTIONS = `
-  OUTPUT REQUIREMENTS:
-  Return ONLY a valid JSON object. Do not include any conversational text, intro, or outro.
+  OUTPUT FORMAT:
+  Return ONLY a valid JSON object. No intro, no outro, no markdown formatting outside the JSON block.
   
-  The JSON must match this structure exactly:
+  Structure:
   {
-    "key": "string (e.g. 'Eb Minor', 'C# Dorian')",
-    "timeSignature": "string (e.g. '4/4')",
+    "key": "string (e.g. 'C Minor', 'F# Major')",
+    "timeSignature": "string",
     "bpmEstimate": "string",
-    "modulations": ["string (key names)"],
-    "complexityLevel": "string ('Simple', 'Intermediate', 'Advanced', or 'Jazz/Complex')",
-    "summary": "string (harmonic analysis summary)",
+    "modulations": ["string"],
+    "complexityLevel": "string ('Simple', 'Intermediate', 'Advanced', 'Jazz/Complex')",
+    "summary": "string",
     "chords": [
       {
-        "timestamp": "string (e.g. '0:05', '5:45')",
-        "symbol": "string (FULL COMPLEX SYMBOL e.g. Cmaj13(#11))",
+        "timestamp": "string (e.g. '0:00')",
+        "symbol": "string (e.g. Cm9, G7alt)",
         "quality": "string",
         "extensions": ["string"],
-        "bassNote": "string (or null)",
-        "confidence": number (0-100)
+        "bassNote": "string (optional)",
+        "confidence": number
       }
     ]
   }
 
-  CRITICAL HARMONIC RULES:
-  1. **TONALITY ACCURACY**: Listen carefully to the bass and the third. Distinguish clearly between Major (Happy/Bright) and Minor (Sad/Dark). DO NOT CONFUSE RELATIVE MAJORS/MINORS (e.g., C Minor vs Eb Major).
-  2. **FULL DURATION**: The chords array must cover the entire song length (100%).
-  3. **NO SIMPLIFICATION**: If it is a Cmaj13(#11), output "Cmaj13(#11)", NOT "Cmaj7". Detect all tensions (b9, #9, #11, b13, alt).
-  4. **EXTENSIONS**: Listen for 9, 11, 13, b9, #9, #11, b13, alt.
-  5. **INVERSIONS**: Slash chords are mandatory (e.g. F/A).
+  CRITICAL MUSIC THEORY RULES:
+  1. **MAJOR VS MINOR CHECK**: Before naming the key or chord, listen to the 3rd interval. 
+     - 3 semitones = Minor (Sad/Dark). 
+     - 4 semitones = Major (Happy/Bright).
+     - **DO NOT** default to Major if the song feels "Pop" but uses minor intervals.
+  2. **FULL DURATION**: Analyze from 0:00 to the very last second.
+  3. **SPECIFICITY**: Prefer "Cadd9" over "C". Prefer "G7b9" over "G7".
+  4. **Slash Chords**: Always identify the bass note if it differs from the root (e.g., C/E).
 `;
 
 export const analyzeAudioContent = async (base64Data: string, mimeType: string): Promise<SongAnalysis> => {
   try {
-    // Using the PRO model for maximum reasoning capability on music theory
-    const modelId = "gemini-2.0-pro-exp-02-05"; 
+    // Switching to FLASH model for high stability and availability.
+    // It handles audio very well and avoids the "Model Unavailable" errors of the Pro/Exp models.
+    const modelId = "gemini-2.0-flash-exp"; 
 
     const prompt = `
-      You are a world-renowned Jazz Professor with Perfect Pitch.
+      Role: You are an expert Audio Engineer and Jazz Theorist with Absolute Pitch.
       
-      TASK: Perform a deep harmonic analysis of the attached audio file.
+      Task: Analyze the harmonic structure of the provided audio file.
       
-      INSTRUCTIONS:
-      1. **Listen to the entire file** from start to finish.
-      2. **Determine the Tonal Center**: Is it Minor or Major? Listen to the cadence.
-      3. **Identify Modulations**: Note every key change.
-      4. **Detect Complex Harmony**: Look for secondary dominants, tritone substitutions, and modal interchange.
-      5. **Output**: Generate the JSON structure defined below.
+      Step-by-Step Execution:
+      1. **Listen to the Bass**: Identify the root movement.
+      2. **Listen to the Quality**: Is the chord Major, Minor, Diminished, or Augmented? (Check the 3rd and 5th).
+      3. **Listen for Color**: Are there 7ths, 9ths, 11ths, 13ths, or altered tensions?
+      4. **Determine Key**: Identify the tonic center. Be careful with relative minors (e.g., don't confuse Eb Major with C Minor).
+      5. **Timeline**: Map chords to timestamps for the **entire duration** of the file.
       
       ${COMMON_PROMPT_INSTRUCTIONS}
     `;
@@ -100,10 +103,7 @@ export const analyzeAudioContent = async (base64Data: string, mimeType: string):
       },
       config: {
         responseMimeType: "application/json", 
-        // We do NOT use responseSchema here intentionally. 
-        // Strict schemas can degrade the quality of complex reasoning in Pro models.
-        // We rely on the prompt and the model's intelligence to produce valid JSON.
-        temperature: 0.2,
+        temperature: 0.1, // Low temperature for factual/theoretical precision
         maxOutputTokens: 65536 
       }
     });
@@ -119,20 +119,22 @@ export const analyzeAudioContent = async (base64Data: string, mimeType: string):
 
 export const analyzeSongFromUrl = async (url: string): Promise<SongAnalysis> => {
   try {
-    const modelId = "gemini-2.0-pro-exp-02-05"; 
+    const modelId = "gemini-2.0-flash-exp"; 
 
     const prompt = `
-      You are a world-class Music Theorist.
+      Role: You are a world-class Music Theorist.
       
-      I have a URL: "${url}"
+      Task: Analyze the harmony of the song found at this URL: "${url}"
       
-      STEP 1: Use Google Search to find the exact Title, Artist, and Version (Live/Studio).
-      STEP 2: Once identified, retrieve your internal theoretical knowledge about this specific recording.
-      STEP 3: Generate a harmonic analysis for the **FULL DURATION** of the song.
+      Execution:
+      1. Use Google Search to identify the exact song version.
+      2. Retrieve the accurate chord progression from your knowledge base.
+      3. **Verification**: Double-check the Key. Is it truly Major or Minor? (e.g. "Get Lucky" is B Dorian/Minor, not D Major).
+      4. Generate the JSON analysis for the full song duration.
       
       ${COMMON_PROMPT_INSTRUCTIONS}
       
-      If the link is a Google Drive link, use the filename to identify the song.
+      Note: If the URL is a Google Drive link, identify the song from the filename/title.
     `;
 
     const response = await ai.models.generateContent({
@@ -140,7 +142,7 @@ export const analyzeSongFromUrl = async (url: string): Promise<SongAnalysis> => 
       contents: { parts: [{ text: prompt }] },
       config: {
         tools: [{ googleSearch: {} }], 
-        // responseMimeType: "application/json", // Sometimes conflicts with tools in Pro, rely on prompt
+        responseMimeType: "application/json",
         temperature: 0.1,
         maxOutputTokens: 65536 
       }
@@ -161,8 +163,8 @@ const handleGeminiError = (error: any) => {
     console.error("Gemini Analysis Error:", error);
     const errorMessage = error.message || error.toString();
     
-    if (errorMessage.includes("404")) {
-      throw new Error("Model Unavailable: The selected AI model is currently busy or not found.");
+    if (errorMessage.includes("404") || errorMessage.includes("not found")) {
+      throw new Error("Service Busy: The AI model is currently under high load. Please try again in a moment.");
     }
     if (errorMessage.includes("429")) {
       throw new Error("Traffic Limit: Too many requests. Please wait 10 seconds and try again.");
