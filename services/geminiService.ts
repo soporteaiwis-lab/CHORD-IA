@@ -119,6 +119,11 @@ export const analyzeSongFromUrl = async (url: string): Promise<SongAnalysis> => 
       I have a URL: "${url}"
       
       STEP 1: Use Google Search to find the exact Title, Artist, and Version (Live/Studio) of the song/video at this link.
+      
+      SPECIAL INSTRUCTION FOR GOOGLE DRIVE LINKS:
+      If the URL is a Google Drive link, use Google Search to try and read the page title or metadata to find the filename. 
+      If you can identify the file name (e.g., "MySong.mp3" or "AutumnLeaves.wav"), treat it as the song title.
+      
       STEP 2: Once identified, retrieve your internal theoretical knowledge about this specific recording.
       STEP 3: Generate a harmonic analysis for it.
       

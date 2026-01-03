@@ -19,6 +19,7 @@ export const AudioInput: React.FC<AudioInputProps> = ({ onAudioReady, onLinkRead
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<number | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isDisabled = status !== AnalysisStatus.IDLE && status !== AnalysisStatus.COMPLETE && status !== AnalysisStatus.ERROR;
 
@@ -33,6 +34,10 @@ export const AudioInput: React.FC<AudioInputProps> = ({ onAudioReady, onLinkRead
       }
       onAudioReady(file);
     }
+  };
+
+  const triggerFileSelect = () => {
+    fileInputRef.current?.click();
   };
 
   const startRecording = async () => {
@@ -124,7 +129,7 @@ export const AudioInput: React.FC<AudioInputProps> = ({ onAudioReady, onLinkRead
           disabled={isDisabled || isRecording}
           className={`px-6 py-2 rounded-full text-sm font-bold transition-all ${activeTab === 'link' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/25' : 'text-slate-400 hover:text-white'}`}
         >
-          YouTube/Link
+          YouTube/Drive
         </button>
       </div>
 
@@ -142,19 +147,47 @@ export const AudioInput: React.FC<AudioInputProps> = ({ onAudioReady, onLinkRead
               <label className="cursor-pointer text-center w-full">
                 <span className="block text-xl font-bold text-white mb-2">Select Audio File</span>
                 <span className="block text-sm text-slate-400 mb-6 max-w-xs mx-auto">
-                   Supports MP3, WAV, M4A, FLAC from Device, iCloud, or Google Drive
+                   Supports MP3, WAV, M4A, FLAC
                 </span>
                 <input 
                   type="file" 
-                  // Expanded accept list for better mobile compatibility (Android/iOS)
                   accept="audio/*, .mp3, .wav, .m4a, .ogg, .flac, .aac, .wma, application/ogg" 
                   onChange={handleFileUpload} 
                   className="hidden" 
+                  ref={fileInputRef}
                   disabled={isDisabled}
                 />
-                <span className={`inline-block px-8 py-3 rounded-xl text-sm font-bold tracking-wide shadow-lg shadow-indigo-500/20 transition-all transform active:scale-95 ${isDisabled ? 'bg-slate-800 text-slate-500' : 'bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white'}`}>
-                  BROWSE FILES
-                </span>
+                
+                <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                  <button 
+                    onClick={triggerFileSelect}
+                    className={`inline-block px-8 py-3 rounded-xl text-sm font-bold tracking-wide shadow-lg shadow-indigo-500/20 transition-all transform active:scale-95 ${isDisabled ? 'bg-slate-800 text-slate-500' : 'bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white'}`}
+                  >
+                    BROWSE DEVICE
+                  </button>
+                  
+                  {/* Google Drive Button */}
+                  <button 
+                    onClick={triggerFileSelect}
+                    className={`inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl text-sm font-bold tracking-wide transition-all transform active:scale-95 border ${isDisabled ? 'bg-slate-800 text-slate-500 border-transparent' : 'bg-white text-slate-700 hover:bg-slate-100 border-transparent'}`}
+                  >
+                    <svg viewBox="0 0 87.3 78" className="w-5 h-5">
+                      <path d="M6.6 66.85l25.3-43.8 23.1 39.95-26.1 4.55L6.6 66.85z" fill="#0066da"/>
+                      <path d="M43.8 63l-26.1 4.55L6.6 66.85l19.5-33.8L43.8 63z" fill="#00ac47"/>
+                      <path d="M55 23.05L28.9 67.55h49.5l-23.4-44.5z" fill="#ea4335"/>
+                      <path d="M28.9 67.55h49.5l-8.6 10.45H28.9v-10.45z" fill="#0066da"/>
+                      <path d="M55 23.05L78.4 67.55l8.9-15.3L55 23.05z" fill="#ffba00"/>
+                      <path d="M26.1 33.05l19.5-33.8 41.7 72.3-8.9 15.3-52.3-53.8z" fill="#00ac47"/>
+                      <path d="M26.1 33.05L55 23.05 87.3 78 28.9 78l-2.8-44.95z" fill="none"/>
+                      <path d="M87.3 78H28.9l-2.8-4.45h61.2L87.3 78z" fill="#2684fc"/>
+                      <path d="M6.6 66.85l19.5-33.8-2.8 4.45-13.9 24.95-2.8 4.4z" fill="#ea4335"/>
+                    </svg>
+                    <span>GOOGLE DRIVE</span>
+                  </button>
+                </div>
+                <p className="mt-4 text-xs text-slate-500">
+                  For Google Drive files: Use the button above if you have Drive for Desktop installed, or paste a public link in the "Link" tab.
+                </p>
               </label>
             </div>
           </div>
@@ -222,7 +255,7 @@ export const AudioInput: React.FC<AudioInputProps> = ({ onAudioReady, onLinkRead
                       </div>
                       <input 
                         type="url"
-                        placeholder="https://open.spotify.com/track/..."
+                        placeholder="https://... (YouTube, Spotify, Drive)"
                         className="w-full bg-slate-900 border border-slate-700 rounded-xl py-3 pl-10 pr-4 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
                         value={linkUrl}
                         onChange={(e) => setLinkUrl(e.target.value)}
@@ -231,7 +264,8 @@ export const AudioInput: React.FC<AudioInputProps> = ({ onAudioReady, onLinkRead
                       />
                    </div>
                    <p className="text-xs text-slate-500 mt-3 leading-relaxed">
-                      <strong>Note:</strong> Works with YouTube, Spotify, and SoundCloud links. The AI will identify the song from the link and perform a theoretical analysis based on its knowledge base.
+                      <strong>Supported:</strong> YouTube, Spotify, SoundCloud, and <strong>Google Drive (Public Links)</strong>. <br/>
+                      The AI will identify the song from the link and perform a theoretical analysis.
                    </p>
                 </div>
 
