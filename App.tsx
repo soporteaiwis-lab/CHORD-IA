@@ -80,8 +80,8 @@ const App: React.FC = () => {
       
       setStatus(AnalysisStatus.ANALYZING_AI);
       
-      // Pass the selected level to the service
-      const result = await analyzeAudioContent(base64Data, mimeType, level);
+      // Pass duration to ensure full coverage
+      const result = await analyzeAudioContent(base64Data, mimeType, level, duration);
       
       setAnalysis(result);
       setStatus(AnalysisStatus.COMPLETE);
@@ -173,11 +173,11 @@ const App: React.FC = () => {
                   <div className="w-3 h-3 bg-pink-500 rounded-full animate-bounce"></div>
                 </div>
               </div>
-              <h2 className="text-2xl font-bold text-white mb-2">CHORD-IA is thinking...</h2>
+              <h2 className="text-2xl font-bold text-white mb-2">CHORD-IA is listening...</h2>
               <p className="text-slate-400">
-                Attempting deep harmonic analysis with Gemini Pro...
+                Calibrating A=440Hz tuning and performing deep harmonic analysis...
                 <br/>
-                <span className="text-xs text-slate-500">(Will auto-fallback to Flash if high traffic)</span>
+                <span className="text-xs text-slate-500 mt-2 block">(Analysis covers full duration)</span>
               </p>
             </div>
           )}
