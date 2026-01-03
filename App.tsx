@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Hero } from './components/Hero';
 import { AudioInput } from './components/AudioInput';
 import { AnalysisResult } from './components/AnalysisResult';
 import { analyzeAudioContent, analyzeSongFromUrl } from './services/geminiService';
-import { AnalysisStatus, SongAnalysis, AudioMetadata } from './types';
+import { AnalysisStatus, SongAnalysis, AudioMetadata, AnalysisLevel } from './types';
 
 const App: React.FC = () => {
   const [status, setStatus] = useState<AnalysisStatus>(AnalysisStatus.IDLE);
@@ -46,48 +46,42 @@ const App: React.FC = () => {
   };
 
   const getCorrectMimeType = (file: File): string => {
-    // If the browser detected a valid audio mime type, use it
     if (file.type && file.type.startsWith('audio/')) {
         return file.type;
     }
-    
-    // Fallback: Infer from extension if MIME is missing or generic (e.g. application/octet-stream from Drive)
     const name = file.name.toLowerCase();
     if (name.endsWith('.mp3')) return 'audio/mp3';
     if (name.endsWith('.wav')) return 'audio/wav';
-    if (name.endsWith('.m4a')) return 'audio/mp4'; // Gemini accepts audio/mp4 for m4a
+    if (name.endsWith('.m4a')) return 'audio/mp4'; 
     if (name.endsWith('.flac')) return 'audio/flac';
     if (name.endsWith('.ogg')) return 'audio/ogg';
     if (name.endsWith('.aac')) return 'audio/aac';
-    
-    // Final fallback
     return 'audio/mp3';
   };
 
-  const processAudio = async (file: File) => {
+  const processAudio = async (file: File, level: AnalysisLevel) => {
     setStatus(AnalysisStatus.PROCESSING_AUDIO);
     setError(null);
     setAnalysis(null);
     setMetadata(null);
 
     try {
-      // Parallel processing: Base64 for AI, Metadata for UI
       const [base64Data, duration] = await Promise.all([
           fileToBase64(file),
           getAudioDuration(file)
       ]);
       
       setMetadata({
-          fileName: file.name.replace(/\.[^/.]+$/, ""), // remove extension
+          fileName: file.name.replace(/\.[^/.]+$/, ""),
           duration: duration
       });
 
       const mimeType = getCorrectMimeType(file);
-      console.log(`Processing file: ${file.name}, Detected MIME: ${mimeType}`);
-
+      
       setStatus(AnalysisStatus.ANALYZING_AI);
       
-      const result = await analyzeAudioContent(base64Data, mimeType);
+      // Pass the selected level to the service
+      const result = await analyzeAudioContent(base64Data, mimeType, level);
       
       setAnalysis(result);
       setStatus(AnalysisStatus.COMPLETE);
@@ -95,17 +89,15 @@ const App: React.FC = () => {
     } catch (err: any) {
       console.error(err);
       setStatus(AnalysisStatus.ERROR);
-      // Use the actual error message which contains useful info now
       setError(err instanceof Error ? err.message : "An unexpected error occurred during analysis.");
     }
   };
 
-  const processLink = async (url: string) => {
-    setStatus(AnalysisStatus.ANALYZING_AI); // Skip processing audio step for links
+  const processLink = async (url: string, level: AnalysisLevel) => {
+    setStatus(AnalysisStatus.ANALYZING_AI);
     setError(null);
     setAnalysis(null);
     
-    // We try to extract a name from the URL for metadata
     let fileName = "Online Link";
     try {
         const urlObj = new URL(url);
@@ -120,11 +112,12 @@ const App: React.FC = () => {
 
     setMetadata({
         fileName: fileName,
-        duration: 0 // We don't know duration for links
+        duration: 0 
     });
 
     try {
-      const result = await analyzeSongFromUrl(url);
+      // Pass the selected level to the service
+      const result = await analyzeSongFromUrl(url, level);
       setAnalysis(result);
       setStatus(AnalysisStatus.COMPLETE);
     } catch (err: any) {
@@ -134,12 +127,12 @@ const App: React.FC = () => {
     }
   };
 
-  const handleAudioReady = (file: File) => {
-    processAudio(file);
+  const handleAudioReady = (file: File, level: AnalysisLevel) => {
+    processAudio(file, level);
   };
 
-  const handleLinkReady = (url: string) => {
-    processLink(url);
+  const handleLinkReady = (url: string, level: AnalysisLevel) => {
+    processLink(url, level);
   }
 
   const handleReset = () => {
@@ -180,9 +173,11 @@ const App: React.FC = () => {
                   <div className="w-3 h-3 bg-pink-500 rounded-full animate-bounce"></div>
                 </div>
               </div>
-              <h2 className="text-2xl font-bold text-white mb-2">CHORD-IA is listening...</h2>
+              <h2 className="text-2xl font-bold text-white mb-2">CHORD-IA is thinking...</h2>
               <p className="text-slate-400">
-                Detecting harmonic structures and consulting global music knowledge base...
+                Attempting deep harmonic analysis with Gemini Pro...
+                <br/>
+                <span className="text-xs text-slate-500">(Will auto-fallback to Flash if high traffic)</span>
               </p>
             </div>
           )}
@@ -221,7 +216,7 @@ const App: React.FC = () => {
 
       <footer className="py-12 text-center text-slate-600 text-sm border-t border-slate-900 bg-slate-950/30 backdrop-blur-sm mt-auto">
         <div className="flex flex-col items-center gap-3">
-          <p className="font-semibold text-indigo-400/90 mb-2">CHORD-IA Powered by Gemini 2.0 Flash Experimental</p>
+          <p className="font-semibold text-indigo-400/90 mb-2">CHORD-IA Powered by Gemini 2.0 Pro / Flash (Hybrid)</p>
           
           <div className="flex flex-col items-center gap-1">
             <p className="text-slate-400">

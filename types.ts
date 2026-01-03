@@ -7,6 +7,8 @@ export enum AnalysisStatus {
   ERROR = 'ERROR',
 }
 
+export type AnalysisLevel = 'Basic' | 'Intermediate' | 'Advanced';
+
 export interface ChordEvent {
   timestamp: string;
   symbol: string;

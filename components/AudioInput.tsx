@@ -1,9 +1,9 @@
 import React, { useState, useRef } from 'react';
-import { AnalysisStatus } from '../types';
+import { AnalysisStatus, AnalysisLevel } from '../types';
 
 interface AudioInputProps {
-  onAudioReady: (file: File) => void;
-  onLinkReady: (url: string) => void;
+  onAudioReady: (file: File, level: AnalysisLevel) => void;
+  onLinkReady: (url: string, level: AnalysisLevel) => void;
   status: AnalysisStatus;
 }
 
@@ -12,6 +12,7 @@ type Tab = 'upload' | 'mic' | 'link';
 
 export const AudioInput: React.FC<AudioInputProps> = ({ onAudioReady, onLinkReady, status }) => {
   const [activeTab, setActiveTab] = useState<Tab>('upload');
+  const [level, setLevel] = useState<AnalysisLevel>('Intermediate');
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [linkUrl, setLinkUrl] = useState('');
@@ -19,6 +20,7 @@ export const AudioInput: React.FC<AudioInputProps> = ({ onAudioReady, onLinkRead
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<number | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isDisabled = status !== AnalysisStatus.IDLE && status !== AnalysisStatus.COMPLETE && status !== AnalysisStatus.ERROR;
 
@@ -31,8 +33,12 @@ export const AudioInput: React.FC<AudioInputProps> = ({ onAudioReady, onLinkRead
         alert("File is too large. Please upload an audio file smaller than 9.5MB for AI processing.");
         return;
       }
-      onAudioReady(file);
+      onAudioReady(file, level);
     }
+  };
+
+  const triggerFileSelect = () => {
+    fileInputRef.current?.click();
   };
 
   const startRecording = async () => {
@@ -53,7 +59,7 @@ export const AudioInput: React.FC<AudioInputProps> = ({ onAudioReady, onLinkRead
            return;
         }
         const file = new File([blob], "live_recording.webm", { type: 'audio/webm' });
-        onAudioReady(file);
+        onAudioReady(file, level);
         stream.getTracks().forEach(track => track.stop());
       };
 
@@ -85,7 +91,7 @@ export const AudioInput: React.FC<AudioInputProps> = ({ onAudioReady, onLinkRead
   const handleLinkSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!linkUrl.trim()) return;
-    onLinkReady(linkUrl);
+    onLinkReady(linkUrl, level);
   };
 
   const formatTime = (seconds: number) => {
@@ -95,7 +101,7 @@ export const AudioInput: React.FC<AudioInputProps> = ({ onAudioReady, onLinkRead
   };
 
   return (
-    <div className="bg-slate-900/50 backdrop-blur-xl rounded-3xl p-6 md:p-10 border border-white/10 shadow-2xl max-w-4xl mx-auto mt-12 relative overflow-hidden transition-all duration-500">
+    <div className="bg-slate-900/50 backdrop-blur-xl rounded-3xl p-6 md:p-8 border border-white/10 shadow-2xl max-w-4xl mx-auto mt-8 relative overflow-hidden transition-all duration-500">
       
       {/* Background decoration */}
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden -z-10 rounded-3xl pointer-events-none">
@@ -103,58 +109,89 @@ export const AudioInput: React.FC<AudioInputProps> = ({ onAudioReady, onLinkRead
         <div className="absolute bottom-0 left-0 w-64 h-64 bg-purple-500/10 blur-[100px]"></div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex justify-center mb-8 bg-slate-950/50 p-1.5 rounded-full w-fit mx-auto border border-white/5">
-        <button 
-          onClick={() => setActiveTab('upload')}
-          disabled={isDisabled || isRecording}
-          className={`px-6 py-2 rounded-full text-sm font-bold transition-all ${activeTab === 'upload' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/25' : 'text-slate-400 hover:text-white'}`}
-        >
-          Upload File
-        </button>
-        <button 
-          onClick={() => setActiveTab('mic')}
-          disabled={isDisabled}
-          className={`px-6 py-2 rounded-full text-sm font-bold transition-all ${activeTab === 'mic' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/25' : 'text-slate-400 hover:text-white'}`}
-        >
-          Microphone
-        </button>
-        <button 
-          onClick={() => setActiveTab('link')}
-          disabled={isDisabled || isRecording}
-          className={`px-6 py-2 rounded-full text-sm font-bold transition-all ${activeTab === 'link' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/25' : 'text-slate-400 hover:text-white'}`}
-        >
-          YouTube/Link
-        </button>
+      {/* Analysis Level Selector */}
+      <div className="mb-8 text-center">
+        <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-3">Select Analysis Level</p>
+        <div className="inline-flex bg-slate-950/80 p-1.5 rounded-xl border border-white/10 shadow-inner">
+          {(['Basic', 'Intermediate', 'Advanced'] as AnalysisLevel[]).map((l) => (
+            <button
+              key={l}
+              onClick={() => setLevel(l)}
+              disabled={isDisabled || isRecording}
+              className={`px-5 py-2 rounded-lg text-sm font-bold transition-all ${
+                level === l 
+                  ? 'bg-gradient-to-r from-indigo-600 to-indigo-500 text-white shadow-lg shadow-indigo-500/25 ring-1 ring-white/20' 
+                  : 'text-slate-500 hover:text-slate-200 hover:bg-white/5'
+              }`}
+            >
+              {l}
+            </button>
+          ))}
+        </div>
+        <p className="text-xs text-slate-500 mt-3 h-4">
+          {level === 'Basic' && "Triads only. Perfect for beginners and simple songs."}
+          {level === 'Intermediate' && "Includes 7th chords and standard progressions."}
+          {level === 'Advanced' && "Full jazz harmony, tensions (9, 11, 13) and precise voicing."}
+        </p>
       </div>
 
-      <div className="min-h-[250px] flex items-center justify-center">
+      {/* Input Type Tabs */}
+      <div className="flex justify-center mb-8 border-b border-white/5 pb-1">
+        <div className="flex space-x-8">
+          <button 
+            onClick={() => setActiveTab('upload')}
+            disabled={isDisabled || isRecording}
+            className={`pb-3 text-sm font-bold transition-all border-b-2 ${activeTab === 'upload' ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
+          >
+            File Upload
+          </button>
+          <button 
+            onClick={() => setActiveTab('mic')}
+            disabled={isDisabled}
+            className={`pb-3 text-sm font-bold transition-all border-b-2 ${activeTab === 'mic' ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
+          >
+            Microphone
+          </button>
+          <button 
+            onClick={() => setActiveTab('link')}
+            disabled={isDisabled || isRecording}
+            className={`pb-3 text-sm font-bold transition-all border-b-2 ${activeTab === 'link' ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
+          >
+            YouTube/Link
+          </button>
+        </div>
+      </div>
+
+      <div className="min-h-[220px] flex items-center justify-center">
         
         {/* Upload Tab */}
         {activeTab === 'upload' && (
           <div className="w-full animate-fade-in">
              <div className="flex flex-col items-center justify-center border-2 border-dashed border-slate-700 rounded-2xl p-8 hover:border-indigo-400 hover:bg-slate-800/30 transition-all duration-300 group">
-              <div className="p-4 rounded-full bg-slate-800 mb-4 group-hover:scale-110 transition-transform shadow-xl">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <div className="p-3 rounded-full bg-slate-800 mb-4 group-hover:scale-110 transition-transform shadow-lg">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                 </svg>
               </div>
               <label className="cursor-pointer text-center w-full">
-                <span className="block text-xl font-bold text-white mb-2">Select Audio File</span>
-                <span className="block text-sm text-slate-400 mb-6 max-w-xs mx-auto">
-                   Supports MP3, WAV, M4A, FLAC from Device, iCloud, or Google Drive
-                </span>
                 <input 
                   type="file" 
-                  // Expanded accept list for better mobile compatibility (Android/iOS)
                   accept="audio/*, .mp3, .wav, .m4a, .ogg, .flac, .aac, .wma, application/ogg" 
                   onChange={handleFileUpload} 
                   className="hidden" 
+                  ref={fileInputRef}
                   disabled={isDisabled}
                 />
-                <span className={`inline-block px-8 py-3 rounded-xl text-sm font-bold tracking-wide shadow-lg shadow-indigo-500/20 transition-all transform active:scale-95 ${isDisabled ? 'bg-slate-800 text-slate-500' : 'bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white'}`}>
-                  BROWSE FILES
-                </span>
+                
+                <div className="flex flex-col items-center">
+                  <button 
+                    onClick={triggerFileSelect}
+                    className={`inline-block px-8 py-3 rounded-xl text-sm font-bold tracking-wide shadow-lg shadow-indigo-500/20 transition-all transform active:scale-95 ${isDisabled ? 'bg-slate-800 text-slate-500' : 'bg-white hover:bg-slate-200 text-slate-900'}`}
+                  >
+                    SELECT AUDIO FILE
+                  </button>
+                  <span className="text-xs text-slate-500 mt-4">MP3, WAV, M4A, FLAC (Max 9.5MB)</span>
+                </div>
               </label>
             </div>
           </div>
@@ -163,16 +200,16 @@ export const AudioInput: React.FC<AudioInputProps> = ({ onAudioReady, onLinkRead
         {/* Microphone Tab */}
         {activeTab === 'mic' && (
           <div className="w-full flex flex-col items-center animate-fade-in">
-             <div className={`relative flex items-center justify-center w-32 h-32 rounded-full mb-8 transition-all duration-500 ${isRecording ? 'scale-110' : ''}`}>
+             <div className={`relative flex items-center justify-center w-28 h-28 rounded-full mb-6 transition-all duration-500 ${isRecording ? 'scale-110' : ''}`}>
                {isRecording && (
                   <div className="absolute inset-0 rounded-full bg-red-500 animate-ping opacity-20"></div>
                )}
                <div className={`absolute inset-0 rounded-full ${isRecording ? 'bg-red-500/20' : 'bg-slate-800 border border-slate-700'}`}></div>
                
                {isRecording ? (
-                 <div className="h-10 w-10 bg-red-500 rounded sm shadow-[0_0_20px_rgba(239,68,68,0.6)] animate-pulse"></div>
+                 <div className="h-8 w-8 bg-red-500 rounded sm shadow-[0_0_20px_rgba(239,68,68,0.6)] animate-pulse"></div>
                ) : (
-                 <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-indigo-400 relative z-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                 <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-indigo-400 relative z-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                 </svg>
                )}
@@ -182,11 +219,8 @@ export const AudioInput: React.FC<AudioInputProps> = ({ onAudioReady, onLinkRead
               {isRecording ? (
                 <div className="mb-6">
                   <span className="text-red-400 font-mono text-3xl font-bold tabular-nums tracking-widest">{formatTime(recordingTime)}</span>
-                  <p className="text-slate-400 text-sm mt-2">Recording in progress...</p>
                 </div>
-              ) : (
-                <p className="text-slate-400 text-sm mb-6 max-w-xs mx-auto">Use your device microphone for real-time analysis.</p>
-              )}
+              ) : null}
               
               {!isRecording ? (
                 <button 
@@ -212,8 +246,7 @@ export const AudioInput: React.FC<AudioInputProps> = ({ onAudioReady, onLinkRead
         {activeTab === 'link' && (
           <div className="w-full animate-fade-in max-w-lg">
              <form onSubmit={handleLinkSubmit} className="flex flex-col gap-4">
-                <div className="bg-slate-800/50 p-6 rounded-2xl border border-slate-700">
-                   <label className="block text-sm font-medium text-slate-300 mb-2 ml-1">Paste Song Link</label>
+                <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700">
                    <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                         <svg className="h-5 w-5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -222,17 +255,14 @@ export const AudioInput: React.FC<AudioInputProps> = ({ onAudioReady, onLinkRead
                       </div>
                       <input 
                         type="url"
-                        placeholder="https://open.spotify.com/track/..."
-                        className="w-full bg-slate-900 border border-slate-700 rounded-xl py-3 pl-10 pr-4 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
+                        placeholder="https://..."
+                        className="w-full bg-slate-900 border border-slate-700 rounded-lg py-3 pl-10 pr-4 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
                         value={linkUrl}
                         onChange={(e) => setLinkUrl(e.target.value)}
                         required
                         disabled={isDisabled}
                       />
                    </div>
-                   <p className="text-xs text-slate-500 mt-3 leading-relaxed">
-                      <strong>Note:</strong> Works with YouTube, Spotify, and SoundCloud links. The AI will identify the song from the link and perform a theoretical analysis based on its knowledge base.
-                   </p>
                 </div>
 
                 <button 
