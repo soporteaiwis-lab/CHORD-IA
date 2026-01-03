@@ -37,7 +37,8 @@ export const analyzeAudioContent = async (base64Data: string, mimeType: string):
     const prompt = `
       You are a virtuoso Jazz Professor and Music Theorist.
       
-      ANALYZE the attached audio file with extreme precision.
+      TASK: ANALYZE THE **ENTIRE** AUDIO FILE FROM BEGINNING TO THE VERY END.
+      DO NOT STOP at 2 or 3 minutes. Analyze every single measure until the audio finishes.
       
       OUTPUT REQUIREMENTS:
       Return ONLY a valid JSON object. Do not include any conversational text outside the JSON.
@@ -52,7 +53,7 @@ export const analyzeAudioContent = async (base64Data: string, mimeType: string):
         "summary": "string (harmonic analysis summary)",
         "chords": [
           {
-            "timestamp": "string (e.g. '0:05')",
+            "timestamp": "string (e.g. '0:05', '5:45')",
             "symbol": "string (FULL COMPLEX SYMBOL e.g. Cmaj13(#11))",
             "quality": "string",
             "extensions": ["string"],
@@ -63,10 +64,11 @@ export const analyzeAudioContent = async (base64Data: string, mimeType: string):
       }
 
       CRITICAL ANALYSIS RULES:
-      1. **NO SIMPLIFICATION**: If it is a Cmaj13(#11), output "Cmaj13(#11)", NOT "Cmaj7".
-      2. **EXTENSIONS**: Listen for 9, 11, 13, b9, #9, #11, b13, alt.
-      3. **INVERSIONS**: Slash chords are mandatory (e.g. F/A).
-      4. **ACCURACY**: If the audio is silent or unclear, provide the best estimate but mark confidence lower.
+      1. **FULL DURATION**: The chords array must cover the entire song length. If the song is 6 minutes, I expect chords at the 5:50 mark.
+      2. **NO SIMPLIFICATION**: If it is a Cmaj13(#11), output "Cmaj13(#11)", NOT "Cmaj7".
+      3. **EXTENSIONS**: Listen for 9, 11, 13, b9, #9, #11, b13, alt.
+      4. **INVERSIONS**: Slash chords are mandatory (e.g. F/A).
+      5. **DENSITY**: Provide a chord event for every significant harmonic change.
     `;
 
     const response = await ai.models.generateContent({
@@ -83,10 +85,9 @@ export const analyzeAudioContent = async (base64Data: string, mimeType: string):
         ]
       },
       config: {
-        // We do NOT use responseSchema here because it can cause failures with complex audio inputs in the experimental model.
-        // We rely on the prompt to enforce JSON structure.
         responseMimeType: "application/json", 
-        temperature: 0.2
+        temperature: 0.2,
+        maxOutputTokens: 8192 // CRITICAL: Increased limit to ensure full song analysis fits in response
       }
     });
 

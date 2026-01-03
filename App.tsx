@@ -3,11 +3,12 @@ import { Hero } from './components/Hero';
 import { AudioInput } from './components/AudioInput';
 import { AnalysisResult } from './components/AnalysisResult';
 import { analyzeAudioContent } from './services/geminiService';
-import { AnalysisStatus, SongAnalysis } from './types';
+import { AnalysisStatus, SongAnalysis, AudioMetadata } from './types';
 
 const App: React.FC = () => {
   const [status, setStatus] = useState<AnalysisStatus>(AnalysisStatus.IDLE);
   const [analysis, setAnalysis] = useState<SongAnalysis | null>(null);
+  const [metadata, setMetadata] = useState<AudioMetadata | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Helper to convert Blob/File to Base64
@@ -28,13 +29,40 @@ const App: React.FC = () => {
     });
   };
 
+  // Helper to get audio duration
+  const getAudioDuration = (file: File): Promise<number> => {
+    return new Promise((resolve) => {
+        const objectUrl = URL.createObjectURL(file);
+        const audio = new Audio();
+        audio.onloadedmetadata = () => {
+            URL.revokeObjectURL(objectUrl);
+            resolve(audio.duration);
+        };
+        audio.onerror = () => {
+            resolve(0); // If fails, just return 0
+        };
+        audio.src = objectUrl;
+    });
+  };
+
   const processAudio = async (file: File) => {
     setStatus(AnalysisStatus.PROCESSING_AUDIO);
     setError(null);
     setAnalysis(null);
+    setMetadata(null);
 
     try {
-      const base64Data = await fileToBase64(file);
+      // Parallel processing: Base64 for AI, Metadata for UI
+      const [base64Data, duration] = await Promise.all([
+          fileToBase64(file),
+          getAudioDuration(file)
+      ]);
+      
+      setMetadata({
+          fileName: file.name.replace(/\.[^/.]+$/, ""), // remove extension
+          duration: duration
+      });
+
       // Ensure we pass a valid mime type or fallback to mp3 which is generally safe
       const mimeType = file.type || 'audio/mp3'; 
 
@@ -60,6 +88,7 @@ const App: React.FC = () => {
   const handleReset = () => {
     setStatus(AnalysisStatus.IDLE);
     setAnalysis(null);
+    setMetadata(null);
     setError(null);
   };
 
@@ -91,7 +120,7 @@ const App: React.FC = () => {
             </div>
             <h2 className="text-2xl font-bold text-white mb-2">CHORD-IA is listening...</h2>
             <p className="text-slate-400">
-              Detecting harmonic structures, calculating tension intervals, and identifying modulations using advanced audio intelligence.
+              Detecting harmonic structures across the <strong>ENTIRE</strong> audio track. This may take a moment for longer songs.
             </p>
           </div>
         )}
@@ -121,7 +150,7 @@ const App: React.FC = () => {
                   New Analysis
                 </button>
              </div>
-             <AnalysisResult analysis={analysis} />
+             <AnalysisResult analysis={analysis} metadata={metadata} />
           </div>
         )}
 
