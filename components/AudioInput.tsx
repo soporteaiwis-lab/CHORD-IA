@@ -165,29 +165,7 @@ export const AudioInput: React.FC<AudioInputProps> = ({ onAudioReady, onLinkRead
                   >
                     BROWSE DEVICE
                   </button>
-                  
-                  {/* Google Drive Button */}
-                  <button 
-                    onClick={triggerFileSelect}
-                    className={`inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl text-sm font-bold tracking-wide transition-all transform active:scale-95 border ${isDisabled ? 'bg-slate-800 text-slate-500 border-transparent' : 'bg-white text-slate-700 hover:bg-slate-100 border-transparent'}`}
-                  >
-                    <svg viewBox="0 0 87.3 78" className="w-5 h-5">
-                      <path d="M6.6 66.85l25.3-43.8 23.1 39.95-26.1 4.55L6.6 66.85z" fill="#0066da"/>
-                      <path d="M43.8 63l-26.1 4.55L6.6 66.85l19.5-33.8L43.8 63z" fill="#00ac47"/>
-                      <path d="M55 23.05L28.9 67.55h49.5l-23.4-44.5z" fill="#ea4335"/>
-                      <path d="M28.9 67.55h49.5l-8.6 10.45H28.9v-10.45z" fill="#0066da"/>
-                      <path d="M55 23.05L78.4 67.55l8.9-15.3L55 23.05z" fill="#ffba00"/>
-                      <path d="M26.1 33.05l19.5-33.8 41.7 72.3-8.9 15.3-52.3-53.8z" fill="#00ac47"/>
-                      <path d="M26.1 33.05L55 23.05 87.3 78 28.9 78l-2.8-44.95z" fill="none"/>
-                      <path d="M87.3 78H28.9l-2.8-4.45h61.2L87.3 78z" fill="#2684fc"/>
-                      <path d="M6.6 66.85l19.5-33.8-2.8 4.45-13.9 24.95-2.8 4.4z" fill="#ea4335"/>
-                    </svg>
-                    <span>GOOGLE DRIVE</span>
-                  </button>
                 </div>
-                <p className="mt-4 text-xs text-slate-500">
-                  For Google Drive files: Use the button above if you have Drive for Desktop installed, or paste a public link in the "Link" tab.
-                </p>
               </label>
             </div>
           </div>

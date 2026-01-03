@@ -1,21 +1,24 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import { SongAnalysis } from "../types";
 
 // Initialize the API client
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-// Robust JSON extractor
+// Robust JSON extractor that handles markdown code blocks and partial text
 const extractJSON = (text: string): any => {
+  if (!text) throw new Error("Empty response from AI");
+  
   try {
     // 1. Try parsing directly
     return JSON.parse(text);
   } catch (e) {
     // 2. Try cleaning markdown code blocks
-    const cleanText = text.replace(/```json/g, '').replace(/```/g, '').trim();
+    let cleanText = text.replace(/```json/g, '').replace(/```/g, '').trim();
+    
     try {
       return JSON.parse(cleanText);
     } catch (e2) {
-      // 3. Regex search for the first '{' and last '}'
+      // 3. Regex search for the first '{' and last '}' to capture the main object
       const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         try {
@@ -24,41 +27,48 @@ const extractJSON = (text: string): any => {
            console.error("JSON Parse Error (Regex):", e3);
         }
       }
-      throw new Error("Could not parse AI response as JSON. The model might have generated invalid output.");
+      console.error("Failed text:", text);
+      throw new Error("Could not parse AI response as JSON. The model generated invalid output.");
     }
   }
 };
 
-const COMMON_PROMPT_INSTRUCTIONS = `
-  OUTPUT REQUIREMENTS:
-  Return ONLY a valid JSON object. Do not include any conversational text, intro, or outro.
-  
-  The JSON must match this structure exactly:
-  {
-    "key": "string (e.g. 'Eb Minor', 'C# Dorian')",
-    "timeSignature": "string (e.g. '4/4')",
-    "bpmEstimate": "string",
-    "modulations": ["string (key names)"],
-    "complexityLevel": "string ('Simple', 'Intermediate', 'Advanced', or 'Jazz/Complex')",
-    "summary": "string (harmonic analysis summary)",
-    "chords": [
-      {
-        "timestamp": "string (e.g. '0:05', '5:45')",
-        "symbol": "string (FULL COMPLEX SYMBOL e.g. Cmaj13(#11))",
-        "quality": "string",
-        "extensions": ["string"],
-        "bassNote": "string (or null)",
-        "confidence": number (0-100)
+// Define strict schema to ensure valid JSON output from Gemini
+const songAnalysisSchema = {
+  type: Type.OBJECT,
+  properties: {
+    key: { type: Type.STRING, description: "The key of the song (e.g. 'Eb Minor')" },
+    timeSignature: { type: Type.STRING, description: "Time signature (e.g. '4/4')" },
+    bpmEstimate: { type: Type.STRING, description: "Estimated BPM" },
+    modulations: { 
+      type: Type.ARRAY, 
+      items: { type: Type.STRING },
+      description: "List of key modulations" 
+    },
+    complexityLevel: { 
+      type: Type.STRING, 
+      description: "Complexity level: 'Simple', 'Intermediate', 'Advanced', or 'Jazz/Complex'" 
+    },
+    summary: { type: Type.STRING, description: "Harmonic analysis summary" },
+    chords: {
+      type: Type.ARRAY,
+      description: "List of chord events covering the entire duration",
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          timestamp: { type: Type.STRING, description: "Timestamp (e.g. '0:05')" },
+          symbol: { type: Type.STRING, description: "Full chord symbol (e.g. Cmaj13)" },
+          quality: { type: Type.STRING, description: "Chord quality (Major, Minor, etc)" },
+          extensions: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Extensions (9, 11, 13, etc)" },
+          bassNote: { type: Type.STRING, description: "Bass note for inversions (optional)", nullable: true },
+          confidence: { type: Type.NUMBER, description: "Confidence score 0-100" }
+        },
+        required: ["timestamp", "symbol", "quality", "confidence"]
       }
-    ]
-  }
-
-  CRITICAL ANALYSIS RULES:
-  1. **FULL DURATION**: The chords array must cover the entire song length. If the song is 6 minutes, the last chord timestamp must be near 6:00.
-  2. **NO SIMPLIFICATION**: If it is a Cmaj13(#11), output "Cmaj13(#11)", NOT "Cmaj7".
-  3. **EXTENSIONS**: Listen for 9, 11, 13, b9, #9, #11, b13, alt.
-  4. **INVERSIONS**: Slash chords are mandatory (e.g. F/A).
-`;
+    }
+  },
+  required: ["key", "timeSignature", "chords", "complexityLevel", "summary"]
+};
 
 export const analyzeAudioContent = async (base64Data: string, mimeType: string): Promise<SongAnalysis> => {
   try {
@@ -68,12 +78,11 @@ export const analyzeAudioContent = async (base64Data: string, mimeType: string):
       You are a virtuoso Jazz Professor and Music Theorist.
       
       TASK: ANALYZE THE **ENTIRE** AUDIO FILE FROM BEGINNING TO THE VERY END.
-      The user has reported that previous analyses stopped early. You MUST ensure the analysis covers 100% of the audio duration.
       
-      ${COMMON_PROMPT_INSTRUCTIONS}
-      
-      5. **DENSITY**: Provide a chord event for every significant harmonic change.
-      6. **COMPLETENESS**: Verify the total length of the audio and ensure the last chord in your JSON corresponds to the fade-out or end of the track.
+      CRITICAL INSTRUCTIONS:
+      1. **FULL DURATION**: The chords array MUST cover 100% of the song length. Do not stop early. If the song is 5 minutes long, the last timestamp must be around 5:00.
+      2. **PRECISION**: Detect complex chords (9, 11, 13, alt), inversions, and modulations.
+      3. **FORMAT**: Output strictly adhering to the JSON schema provided.
     `;
 
     const response = await ai.models.generateContent({
@@ -91,14 +100,13 @@ export const analyzeAudioContent = async (base64Data: string, mimeType: string):
       },
       config: {
         responseMimeType: "application/json", 
+        responseSchema: songAnalysisSchema,
         temperature: 0.2,
-        maxOutputTokens: 65536 // Increased significantly to allow full JSON for long songs
+        maxOutputTokens: 65536 
       }
     });
 
     const rawText = response.text;
-    if (!rawText) throw new Error("The AI returned an empty response.");
-
     return extractJSON(rawText) as SongAnalysis;
 
   } catch (error: any) {
@@ -111,45 +119,36 @@ export const analyzeSongFromUrl = async (url: string): Promise<SongAnalysis> => 
   try {
     const modelId = "gemini-2.0-flash-exp"; 
 
-    // We use the Google Search tool to ensure we identify the correct song from the URL
-    // instead of guessing.
     const prompt = `
       You are a world-class Music Theorist.
       
       I have a URL: "${url}"
       
-      STEP 1: Use Google Search to find the exact Title, Artist, and Version (Live/Studio) of the song/video at this link.
-      
-      SPECIAL INSTRUCTION FOR GOOGLE DRIVE LINKS:
-      If the URL is a Google Drive link, use Google Search to try and read the page title or metadata to find the filename. 
-      If you can identify the file name (e.g., "MySong.mp3" or "AutumnLeaves.wav"), treat it as the song title.
-      
+      STEP 1: Use Google Search to find the exact Title, Artist, and Version (Live/Studio).
       STEP 2: Once identified, retrieve your internal theoretical knowledge about this specific recording.
-      STEP 3: Generate a harmonic analysis for it.
+      STEP 3: Generate a harmonic analysis for the **FULL DURATION** of the song.
       
-      ${COMMON_PROMPT_INSTRUCTIONS}
-      
-      If the link is not a song or cannot be identified, return a summary stating that.
-      NOTE: Generate timestamps and chords based on the standard structure of the identified song. Ensure you cover the full duration.
+      INSTRUCTIONS:
+      - Cover the entire song duration from start to finish.
+      - If it is a Google Drive link, try to identify the song from the filename in the title/metadata if possible.
+      - Return ONLY the JSON object matching the schema.
     `;
 
     const response = await ai.models.generateContent({
       model: modelId,
       contents: { parts: [{ text: prompt }] },
       config: {
-        // We do NOT use responseMimeType: "application/json" here because when tools are used,
-        // the model might return tool calls or text. We rely on the prompt to force JSON format in the text response.
+        // Note: responseSchema is sometimes unstable with tools in experimental models, 
+        // but we use it here to force structure. If it fails, the extractJSON helper acts as backup.
         tools: [{ googleSearch: {} }], 
+        responseMimeType: "application/json",
+        responseSchema: songAnalysisSchema, 
         temperature: 0.1,
-        maxOutputTokens: 65536 // Increased significantly
+        maxOutputTokens: 65536 
       }
     });
 
-    // The response might contain grounding metadata, but we just want the text analysis
     const rawText = response.text;
-    
-    if (!rawText) throw new Error("The AI could not analyze this link. It might be invalid or inaccessible.");
-
     return extractJSON(rawText) as SongAnalysis;
 
   } catch (error: any) {
