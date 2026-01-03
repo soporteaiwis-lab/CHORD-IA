@@ -31,25 +31,27 @@ const getLevelInstructions = (level: AnalysisLevel): string => {
   switch (level) {
     case 'Basic':
       return `
-      **STRICT CONSTRAINT: BASIC MODE**
-      1. Output **ONLY TRIADS** (Major/Minor).
-      2. **Forbidden**: 7ths, 9ths, sus, dim, aug, slash chords.
-      3. **Simplification**: If you hear 'Gmaj7', output 'G'. If you hear 'Cm9', output 'Cm'.
-      4. **Goal**: Create a chord sheet for a beginner campfire guitarist.
+      **MODE: BASIC (BEGINNER)**
+      - **Output ONLY Major and Minor Triads**.
+      - Simplify complex chords:
+        - Gmaj7 -> G
+        - Dm9 -> Dm
+        - A7sus4 -> A
+      - DO NOT show extensions or slash chords.
       `;
     case 'Intermediate':
       return `
-      **CONSTRAINT: INTERMEDIATE MODE**
-      1. Identify **7th chords** (maj7, min7, 7).
-      2. Identify **Slash chords** (inversions) e.g., C/G.
-      3. Ignore upper extensions (9, 11, 13) unless they are the main melody note.
+      **MODE: INTERMEDIATE**
+      - Identify 7th chords (maj7, m7, dom7).
+      - Identify Slash Chords (e.g., C/G, D/F#) only if the bass is distinct.
+      - Simplify upper extensions (9, 11, 13) into their base 7th chord.
       `;
     case 'Advanced':
       return `
-      **CONSTRAINT: ADVANCED JAZZ MODE**
-      1. **Micro-Analysis**: Detect every extension (9, 11, 13, #11, b13, alt).
-      2. **Exact Quality**: Distinguish between dim7, m7b5, aug7.
-      3. **Polychords**: Identify complex upper structures.
+      **MODE: ADVANCED (VIRTUOSO)**
+      - **Precise Detection**: 9, 11, 13, #11, b13, alt, dim7, m7b5.
+      - **Polychords**: Detect upper structures.
+      - **Bass**: Exact inversion tracking.
       `;
     default:
       return "";
@@ -57,9 +59,9 @@ const getLevelInstructions = (level: AnalysisLevel): string => {
 };
 
 const COMMON_SCHEMA = `
-  Return raw JSON only. No markdown formatting.
+  STRICT JSON OUTPUT FORMAT:
   {
-    "key": "string",
+    "key": "string (e.g. 'Ab Major')",
     "timeSignature": "string",
     "bpmEstimate": "string",
     "modulations": ["string"],
@@ -78,41 +80,30 @@ const COMMON_SCHEMA = `
   }
 `;
 
-// Helper to handle the API call
-async function generateAnalysis(
-  prompt: string, 
-  base64Data?: string, 
-  mimeType?: string,
-  tools?: any[]
-): Promise<SongAnalysis> {
-  
-  // We use gemini-1.5-pro-latest because it has the best long-context audio handling
-  // and is less prone to "hallucinating" generic chords than the experimental 2.0 models on large files.
-  const modelId = "gemini-1.5-pro-latest";
-  
-  console.log(`Analyzing with ${modelId}...`);
+// RETRY LOGIC CONSTANTS
+const MAX_RETRIES = 3;
+const BASE_DELAY = 2000; // 2 seconds
 
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+async function generateWithRetry(
+  modelId: string, 
+  contents: any, 
+  config: any, 
+  retries = 0
+): Promise<any> {
   try {
-    const contents: any = { parts: [{ text: prompt }] };
-    if (base64Data && mimeType) {
-      contents.parts.unshift({ inlineData: { mimeType, data: base64Data } });
-    }
-
-    const response = await ai.models.generateContent({
-      model: modelId,
-      contents,
-      config: {
-        responseMimeType: "application/json",
-        tools: tools,
-        temperature: 0.2, // Slight temp needed for audio interpretation
-        maxOutputTokens: 8192, // High token limit for long chord lists
-      }
-    });
-
-    return extractJSON(response.text);
-
+    return await ai.models.generateContent({ model: modelId, contents, config });
   } catch (error: any) {
-    handleGeminiError(error);
+    const msg = error.message || error.toString();
+    const isTransient = msg.includes("503") || msg.includes("429") || msg.includes("Service Unavailable") || msg.includes("Busy");
+    
+    if (isTransient && retries < MAX_RETRIES) {
+      const waitTime = BASE_DELAY * Math.pow(2, retries); // Exponential backoff: 2s, 4s, 8s
+      console.warn(`Gemini Service Busy. Retrying in ${waitTime}ms... (Attempt ${retries + 1}/${MAX_RETRIES})`);
+      await delay(waitTime);
+      return generateWithRetry(modelId, contents, config, retries + 1);
+    }
     throw error;
   }
 }
@@ -121,48 +112,90 @@ export const analyzeAudioContent = async (base64Data: string, mimeType: string, 
   const levelPrompt = getLevelInstructions(level);
   const formattedDuration = `${Math.floor(duration / 60)}:${Math.floor(duration % 60).toString().padStart(2, '0')}`;
   
+  // We use gemini-1.5-flash for AUDIO. It is significantly more stable for large audio files than Pro.
+  const modelId = "gemini-1.5-flash"; 
+
   const prompt = `
-    Role: You are a dedicated Audio Signal Processing AI. 
+    You are an expert Session Musician with Absolute Pitch.
     
-    INPUT DATA:
-    - Audio File Length: ${formattedDuration}
+    INPUT: Audio File (${formattedDuration}).
     
-    TASK:
-    Extract the harmonic chord progression from the provided audio stream.
+    TASK: Perform a beat-by-beat harmonic analysis.
     
-    CRITICAL INSTRUCTIONS (DO NOT HALLUCINATE):
-    1. **IGNORE INTERNAL KNOWLEDGE**: Do not attempt to guess the song name or use existing database knowledge. Analyze *only* the sound waves provided in this request.
-    2. **LISTEN TO THE BASS**: The bass frequency (40Hz-200Hz) determines the root note.
-    3. **LISTEN TO THE MIDS**: The 3rd and 7th intervals (200Hz-1kHz) determine the quality (Major/Minor).
-    4. **FULL DURATION**: You MUST provide chord timestamps from 0:00 up to ${formattedDuration}. Do not stop early.
+    STRATEGY (Chain of Thought):
+    1. **Listen to the GROOVE**: Establish the BPM and Time Signature.
+    2. **Listen to the BASS**: Identify the Root movement.
+    3. **Listen to the HARMONY**: Identify the Chord Quality (Major/Minor) and Color (Extensions).
+    4. **Map the Sections**: Intro -> Verse -> Chorus.
     
     ${levelPrompt}
 
-    OUTPUT FORMAT:
+    CRITICAL RULES:
+    - **A=440Hz Standard Tuning**.
+    - **Full Duration**: Ensure chords are detected from 0:00 to ${formattedDuration}.
+    - **No Hallucinations**: If there is silence, do not output chords.
+    - **Accuracy**: Do not just repeat a loop. Listen to variations.
+
     ${COMMON_SCHEMA}
   `;
 
-  return generateAnalysis(prompt, base64Data, mimeType);
+  console.log(`Analyzing audio with ${modelId} (Duration: ${formattedDuration})...`);
+
+  try {
+    const contents: any = { 
+      parts: [
+        { inlineData: { mimeType, data: base64Data } },
+        { text: prompt } 
+      ] 
+    };
+
+    const response = await generateWithRetry(modelId, contents, {
+      responseMimeType: "application/json",
+      temperature: 0.1, // Low temp for precision
+      maxOutputTokens: 8192,
+    });
+
+    return extractJSON(response.text);
+
+  } catch (error: any) {
+    handleGeminiError(error);
+    throw error;
+  }
 };
 
 export const analyzeSongFromUrl = async (url: string, level: AnalysisLevel): Promise<SongAnalysis> => {
   const levelPrompt = getLevelInstructions(level);
 
+  // For Text/Search based analysis, Pro is better.
+  const modelId = "gemini-1.5-pro"; 
+
   const prompt = `
-    Role: Music Theorist.
+    You are an expert Music Theorist.
     
-    TASK: Analyze the chord progression of the song at this URL: "${url}"
+    TASK: Analyze the song at this URL: "${url}"
     
-    1. Identify the exact version (Studio, Live, or Cover).
-    2. Retrieve the *accurate* sheet music data.
-    3. Convert it to the requested format.
+    1. Identify the song accurately.
+    2. Retrieve the official studio harmony.
+    3. Convert to JSON format.
     
     ${levelPrompt}
 
     ${COMMON_SCHEMA}
   `;
 
-  return generateAnalysis(prompt, undefined, undefined, [{ googleSearch: {} }]);
+  try {
+    const contents = { parts: [{ text: prompt }] };
+    const response = await generateWithRetry(modelId, contents, {
+      responseMimeType: "application/json",
+      tools: [{ googleSearch: {} }],
+      maxOutputTokens: 8192,
+    });
+
+    return extractJSON(response.text);
+  } catch (error: any) {
+    handleGeminiError(error);
+    throw error;
+  }
 };
 
 const handleGeminiError = (error: any) => {
@@ -170,12 +203,12 @@ const handleGeminiError = (error: any) => {
     const errorMessage = error.message || error.toString();
     
     if (errorMessage.includes("404") || errorMessage.includes("not found")) {
-      throw new Error("Service Busy: The AI models are currently under high load. Please try again.");
+      throw new Error("Service Busy: Google AI is currently overloaded. We are retrying...");
     }
     if (errorMessage.includes("429")) {
-      throw new Error("Traffic Limit: Too many requests. Please wait 10 seconds and try again.");
+      throw new Error("Rate Limit: Too many requests. Please wait a moment.");
     }
     if (errorMessage.includes("500") || errorMessage.includes("503")) {
-      throw new Error("Server Error: Google AI encountered an internal error. Please retry.");
+      throw new Error("Server Error: Google AI internal error. Please try again.");
     }
 };

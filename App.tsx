@@ -169,9 +169,9 @@ const App: React.FC = () => {
               </div>
               <h2 className="text-2xl font-bold text-white mb-2">Analyzing Harmonics...</h2>
               <p className="text-slate-400">
-                Scanning audio spectrum for chord structures using Gemini 1.5 Pro...
+                Scanning audio spectrum for chord structures using Gemini 1.5 Flash...
                 <br/>
-                <span className="text-xs text-slate-500 mt-2 block">(Large context window enabled for full song accuracy)</span>
+                <span className="text-xs text-slate-500 mt-2 block">(High-Speed Audio Engine Active)</span>
               </p>
             </div>
           )}
@@ -210,7 +210,7 @@ const App: React.FC = () => {
 
       <footer className="py-12 text-center text-slate-600 text-sm border-t border-slate-900 bg-slate-950/30 backdrop-blur-sm mt-auto">
         <div className="flex flex-col items-center gap-3">
-          <p className="font-semibold text-indigo-400/90 mb-2">CHORD-IA Powered by Gemini 1.5 Pro</p>
+          <p className="font-semibold text-indigo-400/90 mb-2">CHORD-IA Powered by Gemini 1.5 Flash (Audio Engine)</p>
           
           <div className="flex flex-col items-center gap-1">
             <p className="text-slate-400">
