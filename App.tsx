@@ -131,75 +131,94 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] bg-fixed">
-      <Hero />
-      
-      <main className="container mx-auto px-4 pb-12 relative z-10">
+    <div className="min-h-screen bg-slate-950 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] bg-fixed flex flex-col justify-between">
+      <div>
+        <Hero />
         
-        {status === AnalysisStatus.IDLE && (
-           <AudioInput 
-             onAudioReady={handleAudioReady} 
-             onLinkReady={handleLinkReady}
-             status={status} 
-           />
-        )}
+        <main className="container mx-auto px-4 pb-12 relative z-10">
+          
+          {status === AnalysisStatus.IDLE && (
+            <AudioInput 
+              onAudioReady={handleAudioReady} 
+              onLinkReady={handleLinkReady}
+              status={status} 
+            />
+          )}
 
-        {status === AnalysisStatus.PROCESSING_AUDIO && (
-          <div className="text-center mt-20">
-            <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-indigo-500 border-t-transparent mb-4"></div>
-            <p className="text-indigo-300 text-lg font-medium">Processing Audio File...</p>
-          </div>
-        )}
-
-        {status === AnalysisStatus.ANALYZING_AI && (
-          <div className="text-center mt-20 max-w-lg mx-auto bg-slate-900/80 p-8 rounded-2xl border border-indigo-500/30 shadow-2xl shadow-indigo-500/20">
-            <div className="flex justify-center mb-6">
-              <div className="flex space-x-2">
-                <div className="w-3 h-3 bg-indigo-500 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-                <div className="w-3 h-3 bg-purple-500 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-                <div className="w-3 h-3 bg-pink-500 rounded-full animate-bounce"></div>
-              </div>
+          {status === AnalysisStatus.PROCESSING_AUDIO && (
+            <div className="text-center mt-20">
+              <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-indigo-500 border-t-transparent mb-4"></div>
+              <p className="text-indigo-300 text-lg font-medium">Processing Audio File...</p>
             </div>
-            <h2 className="text-2xl font-bold text-white mb-2">CHORD-IA is listening...</h2>
+          )}
+
+          {status === AnalysisStatus.ANALYZING_AI && (
+            <div className="text-center mt-20 max-w-lg mx-auto bg-slate-900/80 p-8 rounded-2xl border border-indigo-500/30 shadow-2xl shadow-indigo-500/20">
+              <div className="flex justify-center mb-6">
+                <div className="flex space-x-2">
+                  <div className="w-3 h-3 bg-indigo-500 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                  <div className="w-3 h-3 bg-purple-500 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                  <div className="w-3 h-3 bg-pink-500 rounded-full animate-bounce"></div>
+                </div>
+              </div>
+              <h2 className="text-2xl font-bold text-white mb-2">CHORD-IA is listening...</h2>
+              <p className="text-slate-400">
+                Detecting harmonic structures and consulting global music knowledge base...
+              </p>
+            </div>
+          )}
+
+          {status === AnalysisStatus.ERROR && (
+            <div className="text-center mt-12 max-w-md mx-auto animate-fade-in">
+              <div className="bg-red-900/20 border border-red-500/50 text-red-200 p-6 rounded-xl shadow-lg">
+                <h3 className="text-xl font-bold mb-2">Analysis Failed</h3>
+                <p className="text-sm opacity-90">{error}</p>
+              </div>
+              <button 
+                onClick={handleReset}
+                className="mt-6 px-6 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-full transition-colors border border-slate-700"
+              >
+                Try Again
+              </button>
+            </div>
+          )}
+
+          {status === AnalysisStatus.COMPLETE && analysis && (
+            <div className="relative">
+              <div className="sticky top-4 z-50 flex justify-end mb-4 pointer-events-none">
+                  <button 
+                    onClick={handleReset}
+                    className="pointer-events-auto bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-full shadow-lg shadow-indigo-500/30 font-medium transition-all transform hover:scale-105"
+                  >
+                    New Analysis
+                  </button>
+              </div>
+              <AnalysisResult analysis={analysis} metadata={metadata} />
+            </div>
+          )}
+
+        </main>
+      </div>
+
+      <footer className="py-12 text-center text-slate-600 text-sm border-t border-slate-900 bg-slate-950/30 backdrop-blur-sm mt-auto">
+        <div className="flex flex-col items-center gap-3">
+          <p className="font-semibold text-indigo-400/90 mb-2">CHORD-IA Powered by Gemini 2.0 Flash Experimental</p>
+          
+          <div className="flex flex-col items-center gap-1">
             <p className="text-slate-400">
-              Detecting harmonic structures and consulting global music knowledge base...
+              Created by <strong className="text-slate-200">Armin Salazar San Martin</strong> • <span className="text-indigo-500 font-bold tracking-widest">AIWIS</span>
+            </p>
+            <p className="text-xs text-slate-500">
+              Based on an original idea by <span className="text-slate-400">Diego Vega Arancibia</span>
             </p>
           </div>
-        )}
 
-        {status === AnalysisStatus.ERROR && (
-           <div className="text-center mt-12 max-w-md mx-auto animate-fade-in">
-             <div className="bg-red-900/20 border border-red-500/50 text-red-200 p-6 rounded-xl shadow-lg">
-               <h3 className="text-xl font-bold mb-2">Analysis Failed</h3>
-               <p className="text-sm opacity-90">{error}</p>
-             </div>
-             <button 
-               onClick={handleReset}
-               className="mt-6 px-6 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-full transition-colors border border-slate-700"
-             >
-               Try Again
-             </button>
-           </div>
-        )}
-
-        {status === AnalysisStatus.COMPLETE && analysis && (
-          <div className="relative">
-             <div className="sticky top-4 z-50 flex justify-end mb-4 pointer-events-none">
-                <button 
-                  onClick={handleReset}
-                  className="pointer-events-auto bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-full shadow-lg shadow-indigo-500/30 font-medium transition-all transform hover:scale-105"
-                >
-                  New Analysis
-                </button>
-             </div>
-             <AnalysisResult analysis={analysis} metadata={metadata} />
+          <div className="mt-6 flex gap-6 text-xs font-mono text-slate-600">
+             <a href="https://www.aiwis.cl" target="_blank" rel="noopener noreferrer" className="hover:text-indigo-400 transition-colors border-b border-transparent hover:border-indigo-400">WWW.AIWIS.CL</a>
+             <span className="opacity-20">|</span>
+             <a href="https://www.simpledata.cl" target="_blank" rel="noopener noreferrer" className="hover:text-indigo-400 transition-colors border-b border-transparent hover:border-indigo-400">WWW.SIMPLEDATA.CL</a>
           </div>
-        )}
-
-      </main>
-
-      <footer className="py-8 text-center text-slate-600 text-sm border-t border-slate-900 mt-12">
-        <p>CHORD-IA Powered by Gemini 2.0 Flash Experimental • Next-Gen Audio Analysis</p>
+        </div>
       </footer>
     </div>
   );
