@@ -54,7 +54,7 @@ const COMMON_PROMPT_INSTRUCTIONS = `
   }
 
   CRITICAL ANALYSIS RULES:
-  1. **FULL DURATION**: The chords array must cover the entire song length.
+  1. **FULL DURATION**: The chords array must cover the entire song length. If the song is 6 minutes, the last chord timestamp must be near 6:00.
   2. **NO SIMPLIFICATION**: If it is a Cmaj13(#11), output "Cmaj13(#11)", NOT "Cmaj7".
   3. **EXTENSIONS**: Listen for 9, 11, 13, b9, #9, #11, b13, alt.
   4. **INVERSIONS**: Slash chords are mandatory (e.g. F/A).
@@ -68,11 +68,12 @@ export const analyzeAudioContent = async (base64Data: string, mimeType: string):
       You are a virtuoso Jazz Professor and Music Theorist.
       
       TASK: ANALYZE THE **ENTIRE** AUDIO FILE FROM BEGINNING TO THE VERY END.
-      DO NOT STOP at 2 or 3 minutes. Analyze every single measure until the audio finishes.
+      The user has reported that previous analyses stopped early. You MUST ensure the analysis covers 100% of the audio duration.
       
       ${COMMON_PROMPT_INSTRUCTIONS}
       
-      5. **DENSITY**: Provide a chord event for every significant harmonic change based on the audio provided.
+      5. **DENSITY**: Provide a chord event for every significant harmonic change.
+      6. **COMPLETENESS**: Verify the total length of the audio and ensure the last chord in your JSON corresponds to the fade-out or end of the track.
     `;
 
     const response = await ai.models.generateContent({
@@ -91,7 +92,7 @@ export const analyzeAudioContent = async (base64Data: string, mimeType: string):
       config: {
         responseMimeType: "application/json", 
         temperature: 0.2,
-        maxOutputTokens: 8192
+        maxOutputTokens: 65536 // Increased significantly to allow full JSON for long songs
       }
     });
 
@@ -124,7 +125,7 @@ export const analyzeSongFromUrl = async (url: string): Promise<SongAnalysis> => 
       ${COMMON_PROMPT_INSTRUCTIONS}
       
       If the link is not a song or cannot be identified, return a summary stating that.
-      NOTE: Generate timestamps and chords based on the standard structure of the identified song.
+      NOTE: Generate timestamps and chords based on the standard structure of the identified song. Ensure you cover the full duration.
     `;
 
     const response = await ai.models.generateContent({
@@ -135,6 +136,7 @@ export const analyzeSongFromUrl = async (url: string): Promise<SongAnalysis> => 
         // the model might return tool calls or text. We rely on the prompt to force JSON format in the text response.
         tools: [{ googleSearch: {} }], 
         temperature: 0.1,
+        maxOutputTokens: 65536 // Increased significantly
       }
     });
 
