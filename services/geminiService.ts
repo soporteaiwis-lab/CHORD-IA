@@ -1,75 +1,72 @@
-import { GoogleGenAI, Type, Schema } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import { SongAnalysis } from "../types";
 
 // Initialize the API client
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-const analysisSchema: Schema = {
-  type: Type.OBJECT,
-  properties: {
-    key: { type: Type.STRING, description: "The specific tonal center (e.g., 'Eb Dorian', 'C# Major', 'G Harmonic Minor')." },
-    timeSignature: { type: Type.STRING, description: "The detected time signature (e.g., '4/4', '12/8', '5/4')." },
-    bpmEstimate: { type: Type.STRING, description: "Accurate tempo estimate." },
-    modulations: {
-      type: Type.ARRAY,
-      items: { type: Type.STRING },
-      description: "List of all key changes found."
-    },
-    complexityLevel: {
-      type: Type.STRING,
-      enum: ["Simple", "Intermediate", "Advanced", "Jazz/Complex"],
-      description: "Harmonic complexity rating."
-    },
-    summary: { type: Type.STRING, description: "Detailed theoretical analysis of harmonic movement, voice leading, and substitutions used." },
-    chords: {
-      type: Type.ARRAY,
-      items: {
-        type: Type.OBJECT,
-        properties: {
-          timestamp: { type: Type.STRING, description: "Exact timestamp (e.g., '0:05')." },
-          symbol: { type: Type.STRING, description: "THE FULL, COMPLEX CHORD SYMBOL (e.g., 'F#maj13(#11)', 'Eb7(alt)', 'C/Bb'). Do not simplify." },
-          quality: { type: Type.STRING, description: "Detailed quality (e.g. Dominant 7th alt, Minor 11, Major 9)." },
-          extensions: { 
-            type: Type.ARRAY, 
-            items: { type: Type.STRING },
-            description: "List of all intervals present (9, 11, 13, b9, #9, #11, b13, etc)."
-          },
-          bassNote: { type: Type.STRING, description: "Specific bass note for inversions or slash chords." },
-          confidence: { type: Type.NUMBER, description: "Confidence 0-100." }
-        },
-        required: ["timestamp", "symbol", "quality", "confidence"]
+// Robust JSON extractor that finds the JSON object within any text
+const extractJSON = (text: string): any => {
+  try {
+    // 1. Try parsing directly
+    return JSON.parse(text);
+  } catch (e) {
+    // 2. Try cleaning markdown code blocks
+    const cleanText = text.replace(/```json/g, '').replace(/```/g, '').trim();
+    try {
+      return JSON.parse(cleanText);
+    } catch (e2) {
+      // 3. Regex search for the first '{' and last '}'
+      const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          return JSON.parse(jsonMatch[0]);
+        } catch (e3) {
+           console.error("JSON Parse Error (Regex):", e3);
+        }
       }
+      throw new Error("Could not parse AI response as JSON.");
     }
-  },
-  required: ["key", "timeSignature", "chords", "complexityLevel", "summary"]
-};
-
-// Helper to clean Markdown code blocks from JSON response
-const cleanJson = (text: string) => {
-  return text.replace(/```json/g, '').replace(/```/g, '').trim();
+  }
 };
 
 export const analyzeAudioContent = async (base64Data: string, mimeType: string): Promise<SongAnalysis> => {
   try {
-    // We stick to gemini-2.0-flash-exp for high reliability and multimodal capabilities
+    // Using gemini-2.0-flash-exp which is currently the SOTA for audio analysis in the API
     const modelId = "gemini-2.0-flash-exp"; 
 
     const prompt = `
-      You are an expert Professor of Jazz Harmony and Music Theory with absolute pitch.
+      You are a virtuoso Jazz Professor and Music Theorist.
       
-      YOUR TASK: Perform a highly advanced harmonic analysis of the provided audio.
+      ANALYZE the attached audio file with extreme precision.
       
-      STRICT RULES FOR CHORD DETECTION:
-      1. **DO NOT SIMPLIFY CHORDS.** This is for advanced musicians.
-      2. If you hear a C Major chord with a 7th, 9th, and sharp 11th, output "Cmaj13(#11)", NOT just "C" or "Cmaj7".
-      3. **DETECT TENSIONS:** Listen specifically for 9ths, 11ths, 13ths, and alterations (b9, #9, #11/b5, b13/#5).
-      4. **INVERSIONS:** If the bass is playing E on a C chord, output "C/E".
-      5. **SPECIFIC QUALITIES:** Distinguish between 'dim7', 'm7b5' (half-dim), 'aug7', 'sus4', 'sus2'.
-      6. **FUNCTIONAL HARMONY:** In the summary, analyze the progression using Roman Numerals (e.g., "ii-V-I in Ab", "Tritone substitution").
+      OUTPUT REQUIREMENTS:
+      Return ONLY a valid JSON object. Do not include any conversational text outside the JSON.
       
-      Provide the most granular, precise, and complex analysis possible.
-      
-      Return the data strictly in the requested JSON format.
+      The JSON must match this structure exactly:
+      {
+        "key": "string (e.g. 'Eb Minor', 'C# Dorian')",
+        "timeSignature": "string (e.g. '4/4')",
+        "bpmEstimate": "string",
+        "modulations": ["string (key names)"],
+        "complexityLevel": "string ('Simple', 'Intermediate', 'Advanced', or 'Jazz/Complex')",
+        "summary": "string (harmonic analysis summary)",
+        "chords": [
+          {
+            "timestamp": "string (e.g. '0:05')",
+            "symbol": "string (FULL COMPLEX SYMBOL e.g. Cmaj13(#11))",
+            "quality": "string",
+            "extensions": ["string"],
+            "bassNote": "string (or null)",
+            "confidence": number (0-100)
+          }
+        ]
+      }
+
+      CRITICAL ANALYSIS RULES:
+      1. **NO SIMPLIFICATION**: If it is a Cmaj13(#11), output "Cmaj13(#11)", NOT "Cmaj7".
+      2. **EXTENSIONS**: Listen for 9, 11, 13, b9, #9, #11, b13, alt.
+      3. **INVERSIONS**: Slash chords are mandatory (e.g. F/A).
+      4. **ACCURACY**: If the audio is silent or unclear, provide the best estimate but mark confidence lower.
     `;
 
     const response = await ai.models.generateContent({
@@ -86,37 +83,41 @@ export const analyzeAudioContent = async (base64Data: string, mimeType: string):
         ]
       },
       config: {
-        responseMimeType: "application/json",
-        responseSchema: analysisSchema,
-        systemInstruction: "You are CHORD-IA. You are a virtuoso music analyst. You never output simple chords if complex extensions exist. You always provide the full extended jazz symbol.",
-        temperature: 0.1 // Keep temperature low to force adherence to the audio facts
+        // We do NOT use responseSchema here because it can cause failures with complex audio inputs in the experimental model.
+        // We rely on the prompt to enforce JSON structure.
+        responseMimeType: "application/json", 
+        temperature: 0.2
       }
     });
 
     const rawText = response.text;
 
     if (!rawText) {
-      throw new Error("No analysis generated from the model.");
+      throw new Error("The AI returned an empty response. Please try again with a clearer audio file.");
     }
 
-    const cleanedText = cleanJson(rawText);
-    const data = JSON.parse(cleanedText) as SongAnalysis;
+    const data = extractJSON(rawText) as SongAnalysis;
+    
+    // Basic validation of the returned data
+    if (!data.chords || !Array.isArray(data.chords)) {
+      throw new Error("AI response missing chord data.");
+    }
+
     return data;
 
   } catch (error: any) {
     console.error("Gemini Analysis Error:", error);
     
-    // Improved error mapping
     const errorMessage = error.message || error.toString();
     
     if (errorMessage.includes("404")) {
-      throw new Error("Model Not Found: Please check if 'gemini-2.0-flash-exp' is available in your region/project.");
+      throw new Error("Model Unavailable: The selected AI model is currently busy or not found.");
     }
     if (errorMessage.includes("429")) {
-      throw new Error("Quota Exceeded: The API rate limit has been reached. Please wait a moment.");
+      throw new Error("Traffic Limit: Too many requests. Please wait 10 seconds and try again.");
     }
     if (errorMessage.includes("500") || errorMessage.includes("503")) {
-      throw new Error("Service Error: Google AI is experiencing temporary issues. Try again.");
+      throw new Error("Server Error: Google AI encountered an internal error. Please retry.");
     }
 
     throw new Error(`Analysis failed: ${errorMessage}`);

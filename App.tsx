@@ -91,7 +91,7 @@ const App: React.FC = () => {
             </div>
             <h2 className="text-2xl font-bold text-white mb-2">CHORD-IA is listening...</h2>
             <p className="text-slate-400">
-              Detecting harmonic structures, calculating tension intervals, and identifying modulations. This might take a moment.
+              Detecting harmonic structures, calculating tension intervals, and identifying modulations using advanced audio intelligence.
             </p>
           </div>
         )}
@@ -128,7 +128,7 @@ const App: React.FC = () => {
       </main>
 
       <footer className="py-8 text-center text-slate-600 text-sm border-t border-slate-900 mt-12">
-        <p>CHORD-IA Powered by Gemini 2.5 Flash Native Audio • Audio Intelligence</p>
+        <p>CHORD-IA Powered by Gemini 2.0 Flash Experimental • Next-Gen Audio Analysis</p>
       </footer>
     </div>
   );
