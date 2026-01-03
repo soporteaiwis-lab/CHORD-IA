@@ -6,67 +6,90 @@ interface AnalysisResultProps {
   metadata: AudioMetadata | null;
 }
 
-// --- Waveform Player Component ---
-const WaveformPlayer: React.FC<{ audioUrl?: string, duration: number, chords: ChordEvent[] }> = ({ audioUrl, duration, chords }) => {
+// --- Helper Functions ---
+const parseTime = (timeStr: string) => {
+  const parts = timeStr.split(':').map(Number);
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  return 0;
+};
+
+// --- Player Controls Icons ---
+const Icons = {
+  Play: () => <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>,
+  Pause: () => <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>,
+  Stop: () => <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h12v12H6z" /></svg>,
+  SkipStart: () => <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" /></svg>,
+  SkipEnd: () => <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" /></svg>,
+  Rewind10: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0019 16V8a1 1 0 00-1.6-.8l-5.333 4zM4.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0011 16V8a1 1 0 00-1.6-.8l-5.334 4z" /></svg>,
+  Forward10: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.933 12.8a1 1 0 000-1.6l-5.333-4A1 1 0 005 8v8a1 1 0 001.6.8l5.333-4zM19.933 12.8a1 1 0 000-1.6l-5.333-4A1 1 0 0013 8v8a1 1 0 001.6.8l5.333-4z" /></svg>,
+  VolumeHigh: () => <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" /></svg>,
+  VolumeMute: () => <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" /></svg>
+};
+
+// --- Interactive Player Component ---
+const EnhancedAudioPlayer: React.FC<{ audioUrl?: string, duration: number, chords: ChordEvent[] }> = ({ audioUrl, duration, chords }) => {
   const audioRef = useRef<HTMLAudioElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
+  const [volume, setVolume] = useState(1);
+  const [isMuted, setIsMuted] = useState(false);
   const [waveformData, setWaveformData] = useState<number[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // Generate waveform data from audio URL
+  // Parse all chord timestamps once
+  const parsedChords = React.useMemo(() => {
+    return chords.map(c => ({ ...c, seconds: parseTime(c.timestamp) }));
+  }, [chords]);
+
+  // Generate waveform
   useEffect(() => {
     if (!audioUrl) return;
-
     const fetchAudio = async () => {
       try {
         const response = await fetch(audioUrl);
         const arrayBuffer = await response.arrayBuffer();
         const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
         const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-        
-        const rawData = audioBuffer.getChannelData(0); // Left channel
-        const samples = 200; // Number of bars to draw
+        const rawData = audioBuffer.getChannelData(0);
+        const samples = 150; 
         const blockSize = Math.floor(rawData.length / samples);
         const filteredData = [];
-        
         for (let i = 0; i < samples; i++) {
-          let blockStart = blockSize * i;
           let sum = 0;
           for (let j = 0; j < blockSize; j++) {
-            sum = sum + Math.abs(rawData[blockStart + j]);
+            sum = sum + Math.abs(rawData[blockSize * i + j]);
           }
           filteredData.push(sum / blockSize);
         }
-        
-        // Normalize
         const multiplier = Math.pow(Math.max(...filteredData), -1);
         setWaveformData(filteredData.map(n => n * multiplier));
         setIsLoaded(true);
       } catch (e) {
-        console.error("Error decoding audio for waveform", e);
+        console.error("Waveform Error", e);
       }
     };
-
     fetchAudio();
   }, [audioUrl]);
 
-  // Handle Playback Loop for UI updates
+  // Audio Events
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
 
     const updateTime = () => setCurrentTime(audio.currentTime);
+    const handleEnd = () => { setIsPlaying(false); setCurrentTime(0); };
+    
     audio.addEventListener('timeupdate', updateTime);
-    audio.addEventListener('ended', () => setIsPlaying(false));
+    audio.addEventListener('ended', handleEnd);
     return () => {
       audio.removeEventListener('timeupdate', updateTime);
-      audio.removeEventListener('ended', () => setIsPlaying(false));
+      audio.removeEventListener('ended', handleEnd);
     };
   }, []);
 
+  // Controls
   const togglePlay = () => {
     if (audioRef.current) {
       if (isPlaying) audioRef.current.pause();
@@ -75,103 +98,201 @@ const WaveformPlayer: React.FC<{ audioUrl?: string, duration: number, chords: Ch
     }
   };
 
-  const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!containerRef.current || !audioRef.current) return;
+  const stop = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+      setIsPlaying(false);
+      setCurrentTime(0);
+    }
+  };
+
+  const seek = (time: number) => {
+    if (audioRef.current) {
+      const newTime = Math.max(0, Math.min(time, duration));
+      audioRef.current.currentTime = newTime;
+      setCurrentTime(newTime);
+    }
+  };
+
+  const skip = (seconds: number) => seek(currentTime + seconds);
+
+  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newVol = parseFloat(e.target.value);
+    setVolume(newVol);
+    if (audioRef.current) audioRef.current.volume = newVol;
+    setIsMuted(newVol === 0);
+  };
+
+  const toggleMute = () => {
+    if (audioRef.current) {
+      const newMute = !isMuted;
+      setIsMuted(newMute);
+      audioRef.current.muted = newMute;
+      if (!newMute && volume === 0) {
+        setVolume(0.5);
+        audioRef.current.volume = 0.5;
+      }
+    }
+  };
+
+  const handleWaveformClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
-    const percentage = x / rect.width;
-    const newTime = percentage * duration;
-    audioRef.current.currentTime = newTime;
-    setCurrentTime(newTime);
+    const pct = x / rect.width;
+    seek(pct * duration);
   };
-
-  const parseTime = (timeStr: string) => {
-    const [min, sec] = timeStr.split(':').map(Number);
-    return min * 60 + sec;
-  };
-
-  // Find active chord
-  const activeChordIndex = chords.findIndex((c, i) => {
-    const start = parseTime(c.timestamp);
-    const end = chords[i + 1] ? parseTime(chords[i + 1].timestamp) : duration;
-    return currentTime >= start && currentTime < end;
-  });
 
   return (
-    <div className="bg-slate-900/80 rounded-2xl border border-slate-700 p-6 mb-8 shadow-xl">
-      <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4 flex justify-between">
-        <span>Audio Player & Waveform</span>
-        {isLoaded ? <span className="text-emerald-400">Audio Loaded</span> : <span className="text-amber-400 animate-pulse">Loading Audio...</span>}
-      </h3>
+    <div className="bg-slate-900/90 rounded-2xl border border-indigo-500/30 p-6 mb-8 shadow-2xl backdrop-blur-sm relative overflow-hidden">
       
+      {/* Background Glow */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[80%] h-24 bg-indigo-500/10 blur-[80px] rounded-full pointer-events-none"></div>
+
       <audio ref={audioRef} src={audioUrl} preload="metadata" />
 
-      {/* Waveform Container */}
+      {/* --- SCROLLING CHORD TIMELINE --- */}
+      <div className="relative h-40 w-full mb-6 overflow-hidden border-b border-slate-800 mask-image-gradient">
+        {/* Center Marker Line */}
+        <div className="absolute left-1/2 top-0 bottom-0 w-0.5 bg-indigo-500/50 z-20 shadow-[0_0_15px_rgba(99,102,241,0.8)]"></div>
+        
+        {/* Track Container */}
+        <div className="absolute inset-0 flex items-center">
+            {parsedChords.map((chord, i) => {
+               // Calculate position: 0 is center.
+               // Scale: 100px per second for smooth scrolling
+               const PIXELS_PER_SECOND = 120;
+               const offsetSeconds = chord.seconds - currentTime;
+               const leftPos = `calc(50% + ${offsetSeconds * PIXELS_PER_SECOND}px)`;
+               
+               // Determine style based on position
+               const distance = Math.abs(offsetSeconds);
+               const isPast = offsetSeconds < -0.5;
+               const isFuture = offsetSeconds > 0.5;
+               const isActive = !isPast && !isFuture;
+               
+               // Only render chords within a reasonable window to save DOM performance
+               if (distance > 10) return null;
+
+               return (
+                 <div 
+                    key={i}
+                    className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 transition-all duration-75 flex flex-col items-center justify-center p-4 rounded-xl"
+                    style={{ 
+                        left: leftPos,
+                        opacity: isActive ? 1 : Math.max(0.1, 1 - distance / 4),
+                        transform: `translate(-50%, -50%) scale(${isActive ? 1.3 : 0.8})`,
+                        filter: isActive ? 'drop-shadow(0 0 15px rgba(99, 102, 241, 0.5))' : 'grayscale(100%)',
+                        zIndex: isActive ? 10 : 1
+                    }}
+                 >
+                    <div className={`text-4xl font-black tracking-tighter ${isActive ? 'text-white' : 'text-slate-500'}`}>
+                        {chord.symbol}
+                    </div>
+                    <div className={`text-xs uppercase font-bold mt-1 ${isActive ? 'text-indigo-400' : 'text-slate-600'}`}>
+                        {chord.quality}
+                    </div>
+                    {chord.bassNote && (
+                        <div className="text-xs text-slate-500 mt-1 border-t border-slate-700 w-full text-center">
+                            /{chord.bassNote}
+                        </div>
+                    )}
+                 </div>
+               );
+            })}
+        </div>
+        
+        {/* Gradient Masks for edges */}
+        <div className="absolute inset-y-0 left-0 w-32 bg-gradient-to-r from-slate-900 to-transparent z-10 pointer-events-none"></div>
+        <div className="absolute inset-y-0 right-0 w-32 bg-gradient-to-l from-slate-900 to-transparent z-10 pointer-events-none"></div>
+      </div>
+
+
+      {/* --- WAVEFORM SCRUBBER --- */}
       <div 
         ref={containerRef}
-        onClick={handleSeek}
-        className="relative h-32 w-full bg-slate-950 rounded-lg cursor-pointer overflow-hidden border border-slate-800 group"
+        onClick={handleWaveformClick}
+        className="relative h-16 w-full bg-slate-950 rounded-lg cursor-pointer overflow-hidden border border-slate-800 group mb-6"
       >
-        {/* Draw Bars */}
         <div className="absolute inset-0 flex items-center justify-between px-1 gap-px">
           {waveformData.map((amp, i) => (
             <div 
               key={i} 
               className="flex-1 bg-indigo-500/40 rounded-full transition-all duration-300"
               style={{ 
-                height: `${Math.max(10, amp * 100)}%`,
+                height: `${Math.max(15, amp * 100)}%`,
                 opacity: (i / waveformData.length) < (currentTime / duration) ? 1 : 0.3,
                 backgroundColor: (i / waveformData.length) < (currentTime / duration) ? '#818cf8' : undefined
               }}
             />
           ))}
         </div>
-
-        {/* Playhead */}
-        <div 
-          className="absolute top-0 bottom-0 w-0.5 bg-white shadow-[0_0_10px_white] z-10 transition-none pointer-events-none"
-          style={{ left: `${(currentTime / duration) * 100}%` }}
-        />
-
-        {/* Hover Effect */}
         <div className="absolute inset-0 bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
       </div>
 
-      {/* Controls */}
-      <div className="flex items-center justify-between mt-4">
-        <button 
-          onClick={togglePlay}
-          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-full font-bold transition-all shadow-lg hover:shadow-indigo-500/20 active:scale-95"
-        >
-          {isPlaying ? (
-            <>
-              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
-              PAUSE
-            </>
-          ) : (
-             <>
-              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" /></svg>
-              PLAY
-            </>
-          )}
-        </button>
 
-        <div className="text-right">
-           <div className="text-2xl font-mono font-bold text-white">
+      {/* --- CONTROL DECK --- */}
+      <div className="flex flex-col md:flex-row items-center justify-between gap-6 bg-slate-950/50 p-4 rounded-xl border border-white/5">
+        
+        {/* Time Display */}
+        <div className="text-2xl font-mono font-bold text-white tabular-nums w-24">
              {Math.floor(currentTime / 60)}:{Math.floor(currentTime % 60).toString().padStart(2, '0')}
-           </div>
-           {activeChordIndex !== -1 && chords[activeChordIndex] && (
-             <div className="text-indigo-400 font-bold text-sm">
-               Current: {chords[activeChordIndex].symbol}
-             </div>
-           )}
         </div>
+
+        {/* Playback Buttons */}
+        <div className="flex items-center gap-3">
+             <button onClick={() => seek(0)} className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-full transition-colors" title="Start">
+                 <Icons.SkipStart />
+             </button>
+             <button onClick={() => skip(-10)} className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-full transition-colors" title="-10s">
+                 <Icons.Rewind10 />
+             </button>
+             
+             {/* STOP */}
+             <button onClick={stop} className="p-3 text-slate-200 hover:text-red-400 bg-slate-800 hover:bg-slate-700 rounded-full transition-all shadow-lg" title="Stop">
+                 <Icons.Stop />
+             </button>
+
+             {/* PLAY/PAUSE - BIG BUTTON */}
+             <button 
+                onClick={togglePlay}
+                className="p-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full shadow-lg shadow-indigo-500/40 transform hover:scale-105 active:scale-95 transition-all"
+             >
+                {isPlaying ? <Icons.Pause /> : <Icons.Play />}
+             </button>
+
+             <button onClick={() => skip(10)} className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-full transition-colors" title="+10s">
+                 <Icons.Forward10 />
+             </button>
+             <button onClick={() => seek(duration)} className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-full transition-colors" title="End">
+                 <Icons.SkipEnd />
+             </button>
+        </div>
+
+        {/* Volume Control */}
+        <div className="flex items-center gap-3 w-48">
+             <button onClick={toggleMute} className="text-slate-400 hover:text-white">
+                 {isMuted || volume === 0 ? <Icons.VolumeMute /> : <Icons.VolumeHigh />}
+             </button>
+             <input 
+               type="range" 
+               min="0" 
+               max="1" 
+               step="0.01" 
+               value={isMuted ? 0 : volume} 
+               onChange={handleVolumeChange}
+               className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+             />
+        </div>
+
       </div>
     </div>
   );
 };
 
-const ChordCard: React.FC<{ chord: ChordEvent, isActive?: boolean }> = ({ chord, isActive }) => {
+// --- Standard Static Card ---
+const ChordCard: React.FC<{ chord: ChordEvent }> = ({ chord }) => {
   let colorClass = "border-slate-700 from-slate-800 to-slate-900";
   let textClass = "text-slate-200";
   let accentClass = "bg-slate-700";
@@ -200,7 +321,7 @@ const ChordCard: React.FC<{ chord: ChordEvent, isActive?: boolean }> = ({ chord,
   const titleSize = symbolLength > 7 ? "text-xl" : symbolLength > 4 ? "text-2xl" : "text-3xl";
 
   return (
-    <div className={`relative flex flex-col p-4 rounded-xl border bg-gradient-to-br ${colorClass} shadow-lg backdrop-blur-sm transition-all duration-300 group h-full justify-between ${isActive ? 'ring-2 ring-white scale-105 shadow-2xl z-10' : 'hover:scale-105 hover:shadow-xl hover:border-opacity-50'}`}>
+    <div className={`relative flex flex-col p-4 rounded-xl border bg-gradient-to-br ${colorClass} shadow-lg backdrop-blur-sm transition-all duration-300 group h-full justify-between hover:scale-105 hover:shadow-xl hover:border-opacity-50`}>
       <div className="flex justify-between items-start mb-2">
          <span className="text-xs text-slate-500 font-mono bg-slate-950/50 px-2 py-0.5 rounded border border-slate-800">{chord.timestamp}</span>
          <span className="text-[10px] text-slate-600 group-hover:text-slate-400 transition-colors">{chord.confidence}%</span>
@@ -293,7 +414,7 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({ analysis, metada
       </head>
       <body>
         <h1>${editableTitle}</h1>
-        <div class="subtitle">Generated by CHORD-IA BETA 1.0</div>
+        <div class="subtitle">Generated by CHORD-IA BETA 2.0</div>
 
         <div class="meta-grid">
           <div class="card">
@@ -408,9 +529,9 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({ analysis, metada
         </button>
       </div>
       
-      {/* Waveform Player */}
+      {/* Enhanced Interactive Player (Replacing old WaveformPlayer) */}
       {metadata?.audioUrl && metadata?.duration && (
-        <WaveformPlayer 
+        <EnhancedAudioPlayer 
           audioUrl={metadata.audioUrl} 
           duration={metadata.duration} 
           chords={analysis.chords}
@@ -461,7 +582,7 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({ analysis, metada
         </div>
       </div>
 
-      {/* Chords Grid */}
+      {/* Static Chords Grid (Preserved) */}
       <div className="mb-6 flex items-end justify-between border-b border-slate-800 pb-4">
         <div>
           <h3 className="text-3xl font-black text-white tracking-tight">Timeline</h3>
