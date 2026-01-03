@@ -33,7 +33,6 @@ const App: React.FC = () => {
         const objectUrl = URL.createObjectURL(file);
         const audio = new Audio();
         audio.onloadedmetadata = () => {
-            // Do NOT revoke immediately, we need it for the waveform
             resolve(audio.duration);
         };
         audio.onerror = () => {
@@ -64,9 +63,7 @@ const App: React.FC = () => {
     setMetadata(null);
 
     try {
-      // Create a persistent URL for the file to be used in the Waveform Player
       const fileUrl = URL.createObjectURL(file);
-
       const [base64Data, duration] = await Promise.all([
           fileToBase64(file),
           getAudioDuration(file)
@@ -75,7 +72,7 @@ const App: React.FC = () => {
       setMetadata({
           fileName: file.name.replace(/\.[^/.]+$/, ""),
           duration: duration,
-          audioUrl: fileUrl // Pass URL to metadata
+          audioUrl: fileUrl 
       });
 
       const mimeType = getCorrectMimeType(file);
@@ -154,7 +151,7 @@ const App: React.FC = () => {
           {status === AnalysisStatus.PROCESSING_AUDIO && (
             <div className="text-center mt-20">
               <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-indigo-500 border-t-transparent mb-4"></div>
-              <p className="text-indigo-300 text-lg font-medium">Processing Audio...</p>
+              <p className="text-indigo-300 text-lg font-medium">Preparing Audio Engine...</p>
             </div>
           )}
 
@@ -168,11 +165,12 @@ const App: React.FC = () => {
                 </div>
               </div>
               <h2 className="text-2xl font-bold text-white mb-2">Analyzing Harmonics...</h2>
-              <p className="text-slate-400">
-                Scanning audio spectrum for chord structures using Gemini 1.5 Flash...
-                <br/>
-                <span className="text-xs text-slate-500 mt-2 block">(High-Speed Audio Engine Active)</span>
-              </p>
+              <div className="text-slate-400 space-y-2">
+                <p>Scanning full frequency spectrum...</p>
+                <p className="text-xs text-indigo-400 animate-pulse">
+                  (If the primary server is busy, we will automatically switch to backup models)
+                </p>
+              </div>
             </div>
           )}
 
@@ -180,7 +178,7 @@ const App: React.FC = () => {
             <div className="text-center mt-12 max-w-md mx-auto animate-fade-in">
               <div className="bg-red-900/20 border border-red-500/50 text-red-200 p-6 rounded-xl shadow-lg">
                 <h3 className="text-xl font-bold mb-2">Analysis Failed</h3>
-                <p className="text-sm opacity-90">{error}</p>
+                <p className="text-sm opacity-90 leading-relaxed">{error}</p>
               </div>
               <button 
                 onClick={handleReset}
@@ -210,7 +208,7 @@ const App: React.FC = () => {
 
       <footer className="py-12 text-center text-slate-600 text-sm border-t border-slate-900 bg-slate-950/30 backdrop-blur-sm mt-auto">
         <div className="flex flex-col items-center gap-3">
-          <p className="font-semibold text-indigo-400/90 mb-2">CHORD-IA Powered by Gemini 1.5 Flash (Audio Engine)</p>
+          <p className="font-semibold text-indigo-400/90 mb-2">CHORD-IA Powered by Gemini 1.5 (Multi-Model Engine)</p>
           
           <div className="flex flex-col items-center gap-1">
             <p className="text-slate-400">
