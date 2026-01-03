@@ -19,7 +19,6 @@ export const AudioInput: React.FC<AudioInputProps> = ({ onAudioReady, onLinkRead
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<number | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isDisabled = status !== AnalysisStatus.IDLE && status !== AnalysisStatus.COMPLETE && status !== AnalysisStatus.ERROR;
 
@@ -34,10 +33,6 @@ export const AudioInput: React.FC<AudioInputProps> = ({ onAudioReady, onLinkRead
       }
       onAudioReady(file);
     }
-  };
-
-  const triggerFileSelect = () => {
-    fileInputRef.current?.click();
   };
 
   const startRecording = async () => {
@@ -129,7 +124,7 @@ export const AudioInput: React.FC<AudioInputProps> = ({ onAudioReady, onLinkRead
           disabled={isDisabled || isRecording}
           className={`px-6 py-2 rounded-full text-sm font-bold transition-all ${activeTab === 'link' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/25' : 'text-slate-400 hover:text-white'}`}
         >
-          YouTube/Drive
+          YouTube/Link
         </button>
       </div>
 
@@ -147,25 +142,19 @@ export const AudioInput: React.FC<AudioInputProps> = ({ onAudioReady, onLinkRead
               <label className="cursor-pointer text-center w-full">
                 <span className="block text-xl font-bold text-white mb-2">Select Audio File</span>
                 <span className="block text-sm text-slate-400 mb-6 max-w-xs mx-auto">
-                   Supports MP3, WAV, M4A, FLAC
+                   Supports MP3, WAV, M4A, FLAC from Device, iCloud, or Google Drive
                 </span>
                 <input 
                   type="file" 
+                  // Expanded accept list for better mobile compatibility (Android/iOS)
                   accept="audio/*, .mp3, .wav, .m4a, .ogg, .flac, .aac, .wma, application/ogg" 
                   onChange={handleFileUpload} 
                   className="hidden" 
-                  ref={fileInputRef}
                   disabled={isDisabled}
                 />
-                
-                <div className="flex flex-col sm:flex-row gap-3 justify-center">
-                  <button 
-                    onClick={triggerFileSelect}
-                    className={`inline-block px-8 py-3 rounded-xl text-sm font-bold tracking-wide shadow-lg shadow-indigo-500/20 transition-all transform active:scale-95 ${isDisabled ? 'bg-slate-800 text-slate-500' : 'bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white'}`}
-                  >
-                    BROWSE DEVICE
-                  </button>
-                </div>
+                <span className={`inline-block px-8 py-3 rounded-xl text-sm font-bold tracking-wide shadow-lg shadow-indigo-500/20 transition-all transform active:scale-95 ${isDisabled ? 'bg-slate-800 text-slate-500' : 'bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white'}`}>
+                  BROWSE FILES
+                </span>
               </label>
             </div>
           </div>
@@ -233,7 +222,7 @@ export const AudioInput: React.FC<AudioInputProps> = ({ onAudioReady, onLinkRead
                       </div>
                       <input 
                         type="url"
-                        placeholder="https://... (YouTube, Spotify, Drive)"
+                        placeholder="https://open.spotify.com/track/..."
                         className="w-full bg-slate-900 border border-slate-700 rounded-xl py-3 pl-10 pr-4 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
                         value={linkUrl}
                         onChange={(e) => setLinkUrl(e.target.value)}
@@ -242,8 +231,7 @@ export const AudioInput: React.FC<AudioInputProps> = ({ onAudioReady, onLinkRead
                       />
                    </div>
                    <p className="text-xs text-slate-500 mt-3 leading-relaxed">
-                      <strong>Supported:</strong> YouTube, Spotify, SoundCloud, and <strong>Google Drive (Public Links)</strong>. <br/>
-                      The AI will identify the song from the link and perform a theoretical analysis.
+                      <strong>Note:</strong> Works with YouTube, Spotify, and SoundCloud links. The AI will identify the song from the link and perform a theoretical analysis based on its knowledge base.
                    </p>
                 </div>
 

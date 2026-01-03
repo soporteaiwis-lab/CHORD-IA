@@ -4,21 +4,18 @@ import { SongAnalysis } from "../types";
 // Initialize the API client
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-// Robust JSON extractor that handles markdown code blocks and partial text
+// Robust JSON extractor
 const extractJSON = (text: string): any => {
-  if (!text) throw new Error("Empty response from AI");
-  
   try {
     // 1. Try parsing directly
     return JSON.parse(text);
   } catch (e) {
     // 2. Try cleaning markdown code blocks
-    let cleanText = text.replace(/```json/g, '').replace(/```/g, '').trim();
-    
+    const cleanText = text.replace(/```json/g, '').replace(/```/g, '').trim();
     try {
       return JSON.parse(cleanText);
     } catch (e2) {
-      // 3. Regex search for the first '{' and last '}' to capture the main object
+      // 3. Regex search for the first '{' and last '}'
       const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         try {
@@ -27,65 +24,56 @@ const extractJSON = (text: string): any => {
            console.error("JSON Parse Error (Regex):", e3);
         }
       }
-      console.error("Failed text:", text);
-      throw new Error("Could not parse AI response as JSON. The model generated invalid output.");
+      throw new Error("Could not parse AI response as JSON. The model might have generated invalid output.");
     }
   }
 };
 
 const COMMON_PROMPT_INSTRUCTIONS = `
-  OUTPUT FORMAT:
-  Return ONLY a valid JSON object. No intro, no outro, no markdown formatting outside the JSON block.
+  OUTPUT REQUIREMENTS:
+  Return ONLY a valid JSON object. Do not include any conversational text, intro, or outro.
   
-  Structure:
+  The JSON must match this structure exactly:
   {
-    "key": "string (e.g. 'C Minor', 'F# Major')",
-    "timeSignature": "string",
+    "key": "string (e.g. 'Eb Minor', 'C# Dorian')",
+    "timeSignature": "string (e.g. '4/4')",
     "bpmEstimate": "string",
-    "modulations": ["string"],
-    "complexityLevel": "string ('Simple', 'Intermediate', 'Advanced', 'Jazz/Complex')",
-    "summary": "string",
+    "modulations": ["string (key names)"],
+    "complexityLevel": "string ('Simple', 'Intermediate', 'Advanced', or 'Jazz/Complex')",
+    "summary": "string (harmonic analysis summary)",
     "chords": [
       {
-        "timestamp": "string (e.g. '0:00')",
-        "symbol": "string (e.g. Cm9, G7alt)",
+        "timestamp": "string (e.g. '0:05', '5:45')",
+        "symbol": "string (FULL COMPLEX SYMBOL e.g. Cmaj13(#11))",
         "quality": "string",
         "extensions": ["string"],
-        "bassNote": "string (optional)",
-        "confidence": number
+        "bassNote": "string (or null)",
+        "confidence": number (0-100)
       }
     ]
   }
 
-  CRITICAL MUSIC THEORY RULES:
-  1. **MAJOR VS MINOR CHECK**: Before naming the key or chord, listen to the 3rd interval. 
-     - 3 semitones = Minor (Sad/Dark). 
-     - 4 semitones = Major (Happy/Bright).
-     - **DO NOT** default to Major if the song feels "Pop" but uses minor intervals.
-  2. **FULL DURATION**: Analyze from 0:00 to the very last second.
-  3. **SPECIFICITY**: Prefer "Cadd9" over "C". Prefer "G7b9" over "G7".
-  4. **Slash Chords**: Always identify the bass note if it differs from the root (e.g., C/E).
+  CRITICAL ANALYSIS RULES:
+  1. **FULL DURATION**: The chords array must cover the entire song length. If the song is 6 minutes, the last chord timestamp must be near 6:00.
+  2. **NO SIMPLIFICATION**: If it is a Cmaj13(#11), output "Cmaj13(#11)", NOT "Cmaj7".
+  3. **EXTENSIONS**: Listen for 9, 11, 13, b9, #9, #11, b13, alt.
+  4. **INVERSIONS**: Slash chords are mandatory (e.g. F/A).
 `;
 
 export const analyzeAudioContent = async (base64Data: string, mimeType: string): Promise<SongAnalysis> => {
   try {
-    // Switching to FLASH model for high stability and availability.
-    // It handles audio very well and avoids the "Model Unavailable" errors of the Pro/Exp models.
     const modelId = "gemini-2.0-flash-exp"; 
 
     const prompt = `
-      Role: You are an expert Audio Engineer and Jazz Theorist with Absolute Pitch.
+      You are a virtuoso Jazz Professor and Music Theorist.
       
-      Task: Analyze the harmonic structure of the provided audio file.
-      
-      Step-by-Step Execution:
-      1. **Listen to the Bass**: Identify the root movement.
-      2. **Listen to the Quality**: Is the chord Major, Minor, Diminished, or Augmented? (Check the 3rd and 5th).
-      3. **Listen for Color**: Are there 7ths, 9ths, 11ths, 13ths, or altered tensions?
-      4. **Determine Key**: Identify the tonic center. Be careful with relative minors (e.g., don't confuse Eb Major with C Minor).
-      5. **Timeline**: Map chords to timestamps for the **entire duration** of the file.
+      TASK: ANALYZE THE **ENTIRE** AUDIO FILE FROM BEGINNING TO THE VERY END.
+      The user has reported that previous analyses stopped early. You MUST ensure the analysis covers 100% of the audio duration.
       
       ${COMMON_PROMPT_INSTRUCTIONS}
+      
+      5. **DENSITY**: Provide a chord event for every significant harmonic change.
+      6. **COMPLETENESS**: Verify the total length of the audio and ensure the last chord in your JSON corresponds to the fade-out or end of the track.
     `;
 
     const response = await ai.models.generateContent({
@@ -103,12 +91,14 @@ export const analyzeAudioContent = async (base64Data: string, mimeType: string):
       },
       config: {
         responseMimeType: "application/json", 
-        temperature: 0.1, // Low temperature for factual/theoretical precision
-        maxOutputTokens: 65536 
+        temperature: 0.2,
+        maxOutputTokens: 65536 // Increased significantly to allow full JSON for long songs
       }
     });
 
     const rawText = response.text;
+    if (!rawText) throw new Error("The AI returned an empty response.");
+
     return extractJSON(rawText) as SongAnalysis;
 
   } catch (error: any) {
@@ -121,36 +111,40 @@ export const analyzeSongFromUrl = async (url: string): Promise<SongAnalysis> => 
   try {
     const modelId = "gemini-2.0-flash-exp"; 
 
+    // We use the Google Search tool to ensure we identify the correct song from the URL
+    // instead of guessing.
     const prompt = `
-      Role: You are a world-class Music Theorist.
+      You are a world-class Music Theorist.
       
-      Task: Analyze the harmony of the song found at this URL: "${url}"
+      I have a URL: "${url}"
       
-      Execution:
-      1. Use Google Search to identify the exact song version.
-      2. Retrieve the accurate chord progression from your knowledge base.
-      3. **Verification**: Double-check the Key. Is it truly Major or Minor? (e.g. "Get Lucky" is B Dorian/Minor, not D Major).
-      4. Generate the JSON analysis for the full song duration.
+      STEP 1: Use Google Search to find the exact Title, Artist, and Version (Live/Studio) of the song/video at this link.
+      STEP 2: Once identified, retrieve your internal theoretical knowledge about this specific recording.
+      STEP 3: Generate a harmonic analysis for it.
       
       ${COMMON_PROMPT_INSTRUCTIONS}
       
-      Note: If the URL is a Google Drive link, identify the song from the filename/title.
+      If the link is not a song or cannot be identified, return a summary stating that.
+      NOTE: Generate timestamps and chords based on the standard structure of the identified song. Ensure you cover the full duration.
     `;
 
     const response = await ai.models.generateContent({
       model: modelId,
       contents: { parts: [{ text: prompt }] },
       config: {
+        // We do NOT use responseMimeType: "application/json" here because when tools are used,
+        // the model might return tool calls or text. We rely on the prompt to force JSON format in the text response.
         tools: [{ googleSearch: {} }], 
-        responseMimeType: "application/json",
         temperature: 0.1,
-        maxOutputTokens: 65536 
+        maxOutputTokens: 65536 // Increased significantly
       }
     });
 
+    // The response might contain grounding metadata, but we just want the text analysis
     const rawText = response.text;
-    if (!rawText) throw new Error("The AI could not analyze this link.");
     
+    if (!rawText) throw new Error("The AI could not analyze this link. It might be invalid or inaccessible.");
+
     return extractJSON(rawText) as SongAnalysis;
 
   } catch (error: any) {
@@ -163,8 +157,8 @@ const handleGeminiError = (error: any) => {
     console.error("Gemini Analysis Error:", error);
     const errorMessage = error.message || error.toString();
     
-    if (errorMessage.includes("404") || errorMessage.includes("not found")) {
-      throw new Error("Service Busy: The AI model is currently under high load. Please try again in a moment.");
+    if (errorMessage.includes("404")) {
+      throw new Error("Model Unavailable: The selected AI model is currently busy or not found.");
     }
     if (errorMessage.includes("429")) {
       throw new Error("Traffic Limit: Too many requests. Please wait 10 seconds and try again.");
