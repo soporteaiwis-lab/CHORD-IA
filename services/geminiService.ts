@@ -4,7 +4,7 @@ import { SongAnalysis } from "../types";
 // Initialize the API client
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-// Robust JSON extractor that finds the JSON object within any text
+// Robust JSON extractor
 const extractJSON = (text: string): any => {
   try {
     // 1. Try parsing directly
@@ -24,14 +24,14 @@ const extractJSON = (text: string): any => {
            console.error("JSON Parse Error (Regex):", e3);
         }
       }
-      throw new Error("Could not parse AI response as JSON.");
+      throw new Error("Could not parse AI response as JSON. The model might have generated invalid output.");
     }
   }
 };
 
 const COMMON_PROMPT_INSTRUCTIONS = `
   OUTPUT REQUIREMENTS:
-  Return ONLY a valid JSON object. Do not include any conversational text outside the JSON.
+  Return ONLY a valid JSON object. Do not include any conversational text, intro, or outro.
   
   The JSON must match this structure exactly:
   {
@@ -62,7 +62,6 @@ const COMMON_PROMPT_INSTRUCTIONS = `
 
 export const analyzeAudioContent = async (base64Data: string, mimeType: string): Promise<SongAnalysis> => {
   try {
-    // Using gemini-2.0-flash-exp which is currently the SOTA for audio analysis in the API
     const modelId = "gemini-2.0-flash-exp"; 
 
     const prompt = `
@@ -109,36 +108,40 @@ export const analyzeAudioContent = async (base64Data: string, mimeType: string):
 
 export const analyzeSongFromUrl = async (url: string): Promise<SongAnalysis> => {
   try {
-    // For text/link analysis, gemini-2.0-flash-exp or gemini-3-pro-preview (conceptually) works well.
-    // We stick to the flash-exp as it's the requested powerful model in this context.
     const modelId = "gemini-2.0-flash-exp"; 
 
+    // We use the Google Search tool to ensure we identify the correct song from the URL
+    // instead of guessing.
     const prompt = `
       You are a world-class Music Theorist.
       
-      The user has provided this link to a song: "${url}".
+      I have a URL: "${url}"
       
-      TASK:
-      1. IDENTIFY the song, artist, and version (Studio, Live, etc.) from the link string or by inferring from popular platforms.
-      2. If identified, perform a deep theoretical retrieval from your training data to generate a highly accurate harmonic analysis of the original studio recording.
-      3. If the link is ambiguous, make your best educated guess based on the text in the URL.
+      STEP 1: Use Google Search to find the exact Title, Artist, and Version (Live/Studio) of the song/video at this link.
+      STEP 2: Once identified, retrieve your internal theoretical knowledge about this specific recording.
+      STEP 3: Generate a harmonic analysis for it.
       
       ${COMMON_PROMPT_INSTRUCTIONS}
       
-      NOTE: Since you cannot listen to the link directly, generate the timestamps and chords based on the standard structure (Intro, Verse, Chorus, Bridge, etc.) of the identified song. Be as precise as possible with standard radio edit lengths.
+      If the link is not a song or cannot be identified, return a summary stating that.
+      NOTE: Generate timestamps and chords based on the standard structure of the identified song.
     `;
 
     const response = await ai.models.generateContent({
       model: modelId,
       contents: { parts: [{ text: prompt }] },
       config: {
-        responseMimeType: "application/json", 
-        temperature: 0.1, // Lower temperature for factual retrieval
+        // We do NOT use responseMimeType: "application/json" here because when tools are used,
+        // the model might return tool calls or text. We rely on the prompt to force JSON format in the text response.
+        tools: [{ googleSearch: {} }], 
+        temperature: 0.1,
       }
     });
 
+    // The response might contain grounding metadata, but we just want the text analysis
     const rawText = response.text;
-    if (!rawText) throw new Error("The AI could not analyze this link.");
+    
+    if (!rawText) throw new Error("The AI could not analyze this link. It might be invalid or inaccessible.");
 
     return extractJSON(rawText) as SongAnalysis;
 

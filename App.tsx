@@ -45,6 +45,25 @@ const App: React.FC = () => {
     });
   };
 
+  const getCorrectMimeType = (file: File): string => {
+    // If the browser detected a valid audio mime type, use it
+    if (file.type && file.type.startsWith('audio/')) {
+        return file.type;
+    }
+    
+    // Fallback: Infer from extension if MIME is missing or generic (e.g. application/octet-stream from Drive)
+    const name = file.name.toLowerCase();
+    if (name.endsWith('.mp3')) return 'audio/mp3';
+    if (name.endsWith('.wav')) return 'audio/wav';
+    if (name.endsWith('.m4a')) return 'audio/mp4'; // Gemini accepts audio/mp4 for m4a
+    if (name.endsWith('.flac')) return 'audio/flac';
+    if (name.endsWith('.ogg')) return 'audio/ogg';
+    if (name.endsWith('.aac')) return 'audio/aac';
+    
+    // Final fallback
+    return 'audio/mp3';
+  };
+
   const processAudio = async (file: File) => {
     setStatus(AnalysisStatus.PROCESSING_AUDIO);
     setError(null);
@@ -63,8 +82,8 @@ const App: React.FC = () => {
           duration: duration
       });
 
-      // Ensure we pass a valid mime type or fallback to mp3 which is generally safe
-      const mimeType = file.type || 'audio/mp3'; 
+      const mimeType = getCorrectMimeType(file);
+      console.log(`Processing file: ${file.name}, Detected MIME: ${mimeType}`);
 
       setStatus(AnalysisStatus.ANALYZING_AI);
       
@@ -215,8 +234,6 @@ const App: React.FC = () => {
 
           <div className="mt-6 flex gap-6 text-xs font-mono text-slate-600">
              <a href="https://www.aiwis.cl" target="_blank" rel="noopener noreferrer" className="hover:text-indigo-400 transition-colors border-b border-transparent hover:border-indigo-400">WWW.AIWIS.CL</a>
-             <span className="opacity-20">|</span>
-             <a href="https://www.simpledata.cl" target="_blank" rel="noopener noreferrer" className="hover:text-indigo-400 transition-colors border-b border-transparent hover:border-indigo-400">WWW.SIMPLEDATA.CL</a>
           </div>
         </div>
       </footer>
