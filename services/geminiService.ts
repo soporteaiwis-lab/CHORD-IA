@@ -44,10 +44,15 @@ const analysisSchema: Schema = {
   required: ["key", "timeSignature", "chords", "complexityLevel", "summary"]
 };
 
+// Helper to clean Markdown code blocks from JSON response
+const cleanJson = (text: string) => {
+  return text.replace(/```json/g, '').replace(/```/g, '').trim();
+};
+
 export const analyzeAudioContent = async (base64Data: string, mimeType: string): Promise<SongAnalysis> => {
   try {
-    // Using the specialized native audio model for best results
-    const modelId = "gemini-2.5-flash-native-audio-preview-09-2025"; 
+    // Using gemini-2.0-flash-exp which is highly capable of multimodal analysis and currently available in AI Studio
+    const modelId = "gemini-2.0-flash-exp"; 
 
     const prompt = `
       Act as a world-class music theorist and virtuoso with perfect pitch. 
@@ -80,30 +85,36 @@ export const analyzeAudioContent = async (base64Data: string, mimeType: string):
         responseMimeType: "application/json",
         responseSchema: analysisSchema,
         systemInstruction: "You are CHORD-IA, an advanced AI music theory engine. Your goal is absolute harmonic accuracy.",
-        temperature: 0.2 // Low temperature for more deterministic/accurate analysis
+        temperature: 0.1 // Lower temperature for more consistent, analytical results
       }
     });
 
-    if (!response.text) {
+    const rawText = response.text;
+
+    if (!rawText) {
       throw new Error("No analysis generated from the model.");
     }
 
-    const data = JSON.parse(response.text) as SongAnalysis;
+    const cleanedText = cleanJson(rawText);
+    const data = JSON.parse(cleanedText) as SongAnalysis;
     return data;
 
   } catch (error: any) {
     console.error("Gemini Analysis Error:", error);
-    // Extract meaningful error message
+    
+    // Improved error mapping
     const errorMessage = error.message || error.toString();
-    if (errorMessage.includes("400")) {
-      throw new Error("Bad Request: The audio file might be corrupted or the format is unsupported.");
-    }
-    if (errorMessage.includes("413")) {
-      throw new Error("File Too Large: The audio file exceeds the size limit for processing.");
-    }
+    
     if (errorMessage.includes("404")) {
-      throw new Error("Model Not Found: The AI service is temporarily unavailable.");
+      throw new Error("Model Not Found: Please check if 'gemini-2.0-flash-exp' is available in your region/project.");
     }
+    if (errorMessage.includes("429")) {
+      throw new Error("Quota Exceeded: The API rate limit has been reached. Please wait a moment.");
+    }
+    if (errorMessage.includes("500") || errorMessage.includes("503")) {
+      throw new Error("Service Error: Google AI is experiencing temporary issues. Try again.");
+    }
+
     throw new Error(`Analysis failed: ${errorMessage}`);
   }
 };

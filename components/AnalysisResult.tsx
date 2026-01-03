@@ -7,33 +7,47 @@ interface AnalysisResultProps {
 
 const ChordCard: React.FC<{ chord: ChordEvent }> = ({ chord }) => {
   // Determine color based on quality
-  let colorClass = "border-slate-700 bg-slate-800/50";
+  let colorClass = "border-slate-700 from-slate-800 to-slate-900";
   let textClass = "text-slate-200";
+  let accentClass = "bg-slate-700";
 
-  if (chord.quality.toLowerCase().includes('major')) {
-    colorClass = "border-emerald-500/30 bg-emerald-900/10";
+  const quality = chord.quality.toLowerCase();
+
+  if (quality.includes('major')) {
+    colorClass = "border-emerald-500/30 from-emerald-900/20 to-slate-900";
     textClass = "text-emerald-400";
-  } else if (chord.quality.toLowerCase().includes('minor')) {
-    colorClass = "border-blue-500/30 bg-blue-900/10";
+    accentClass = "bg-emerald-500/20 text-emerald-300 border-emerald-500/30";
+  } else if (quality.includes('minor')) {
+    colorClass = "border-blue-500/30 from-blue-900/20 to-slate-900";
     textClass = "text-blue-400";
-  } else if (chord.quality.toLowerCase().includes('dim') || chord.quality.toLowerCase().includes('half')) {
-    colorClass = "border-purple-500/30 bg-purple-900/10";
+    accentClass = "bg-blue-500/20 text-blue-300 border-blue-500/30";
+  } else if (quality.includes('dim') || quality.includes('half')) {
+    colorClass = "border-purple-500/30 from-purple-900/20 to-slate-900";
     textClass = "text-purple-400";
-  } else if (chord.quality.toLowerCase().includes('dom') || chord.quality.toLowerCase().includes('aug')) {
-    colorClass = "border-amber-500/30 bg-amber-900/10";
+    accentClass = "bg-purple-500/20 text-purple-300 border-purple-500/30";
+  } else if (quality.includes('dom') || quality.includes('aug')) {
+    colorClass = "border-amber-500/30 from-amber-900/20 to-slate-900";
     textClass = "text-amber-400";
+    accentClass = "bg-amber-500/20 text-amber-300 border-amber-500/30";
   }
 
   return (
-    <div className={`flex flex-col p-3 rounded-lg border ${colorClass} transition-all hover:scale-105 hover:bg-slate-800`}>
-      <span className="text-xs text-slate-500 font-mono mb-1">{chord.timestamp}</span>
-      <div className="flex items-baseline gap-1">
-        <span className={`text-xl font-bold ${textClass}`}>{chord.symbol}</span>
-        {chord.bassNote && <span className="text-sm text-slate-400">/{chord.bassNote}</span>}
+    <div className={`relative flex flex-col p-4 rounded-xl border bg-gradient-to-br ${colorClass} shadow-lg backdrop-blur-sm transition-all duration-300 hover:scale-105 hover:shadow-xl hover:border-opacity-50 group`}>
+      <div className="flex justify-between items-start mb-2">
+         <span className="text-xs text-slate-500 font-mono bg-slate-950/50 px-2 py-0.5 rounded border border-slate-800">{chord.timestamp}</span>
+         <span className="text-[10px] text-slate-600 group-hover:text-slate-400 transition-colors">{chord.confidence}%</span>
       </div>
-      <div className="mt-2 flex flex-wrap gap-1">
+      
+      <div className="flex items-baseline gap-1 my-1">
+        <span className={`text-2xl font-black tracking-tight ${textClass}`}>{chord.symbol}</span>
+        {chord.bassNote && <span className="text-lg text-slate-400 font-medium">/{chord.bassNote}</span>}
+      </div>
+      
+      <div className="text-xs text-slate-500 mb-3 font-medium truncate">{chord.quality}</div>
+
+      <div className="mt-auto flex flex-wrap gap-1.5">
         {chord.extensions?.map((ext, i) => (
-          <span key={i} className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-950 text-slate-400 border border-slate-800">
+          <span key={i} className={`text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded border ${accentClass}`}>
             {ext}
           </span>
         ))}
@@ -46,55 +60,74 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({ analysis }) => {
   if (!analysis) return null;
 
   return (
-    <div className="max-w-6xl mx-auto mt-12 px-4 animate-fade-in pb-20">
+    <div className="max-w-7xl mx-auto mt-12 px-4 animate-fade-in pb-20">
       
       {/* Header Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        <div className="bg-slate-900/80 p-6 rounded-2xl border border-slate-800">
-          <div className="text-sm text-slate-400 uppercase tracking-widest mb-2">Key Center</div>
-          <div className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-br from-indigo-400 to-purple-400">
+        <div className="bg-slate-900/40 backdrop-blur-md p-6 rounded-2xl border border-white/5 shadow-xl">
+          <div className="text-xs text-indigo-300 uppercase tracking-widest font-bold mb-2">Key Center</div>
+          <div className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400 drop-shadow-sm">
             {analysis.key}
           </div>
         </div>
-        <div className="bg-slate-900/80 p-6 rounded-2xl border border-slate-800">
-          <div className="text-sm text-slate-400 uppercase tracking-widest mb-2">Signature</div>
-          <div className="text-3xl font-bold text-white">
+        <div className="bg-slate-900/40 backdrop-blur-md p-6 rounded-2xl border border-white/5 shadow-xl">
+          <div className="text-xs text-slate-400 uppercase tracking-widest font-bold mb-2">Time Signature</div>
+          <div className="text-4xl font-black text-white">
             {analysis.timeSignature}
           </div>
         </div>
-        <div className="bg-slate-900/80 p-6 rounded-2xl border border-slate-800">
-          <div className="text-sm text-slate-400 uppercase tracking-widest mb-2">Complexity</div>
-          <div className={`text-xl font-bold ${
-            analysis.complexityLevel.includes('Jazz') ? 'text-pink-500' : 
-            analysis.complexityLevel === 'Advanced' ? 'text-amber-500' : 
-            'text-emerald-500'
+        <div className="bg-slate-900/40 backdrop-blur-md p-6 rounded-2xl border border-white/5 shadow-xl">
+          <div className="text-xs text-slate-400 uppercase tracking-widest font-bold mb-2">Complexity</div>
+          <div className={`text-2xl font-bold ${
+            analysis.complexityLevel.includes('Jazz') ? 'text-pink-400' : 
+            analysis.complexityLevel === 'Advanced' ? 'text-amber-400' : 
+            'text-emerald-400'
           }`}>
             {analysis.complexityLevel}
           </div>
         </div>
-        <div className="bg-slate-900/80 p-6 rounded-2xl border border-slate-800">
-          <div className="text-sm text-slate-400 uppercase tracking-widest mb-2">Modulations</div>
-          <div className="text-lg font-medium text-white">
-            {analysis.modulations.length > 0 ? analysis.modulations.join(', ') : 'None'}
+        <div className="bg-slate-900/40 backdrop-blur-md p-6 rounded-2xl border border-white/5 shadow-xl">
+          <div className="text-xs text-slate-400 uppercase tracking-widest font-bold mb-2">BPM Estimate</div>
+          <div className="text-2xl font-bold text-white">
+            {analysis.bpmEstimate || "N/A"}
           </div>
         </div>
       </div>
 
       {/* Summary */}
-      <div className="bg-slate-900/50 rounded-2xl border border-slate-800 p-6 mb-8">
-        <h3 className="text-lg font-semibold text-white mb-3">AI Theory Analysis</h3>
-        <p className="text-slate-300 leading-relaxed">{analysis.summary}</p>
+      <div className="relative bg-gradient-to-r from-slate-900 to-slate-900/80 rounded-2xl border border-indigo-500/20 p-8 mb-10 overflow-hidden shadow-2xl">
+        <div className="absolute top-0 right-0 -mt-4 -mr-4 w-24 h-24 bg-indigo-500 rounded-full blur-3xl opacity-20"></div>
+        <div className="relative z-10">
+          <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+            <svg className="w-5 h-5 text-indigo-400" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z"/></svg>
+            AI Harmonic Analysis
+          </h3>
+          <p className="text-slate-300 leading-relaxed text-lg font-light tracking-wide">{analysis.summary}</p>
+          {analysis.modulations.length > 0 && (
+            <div className="mt-6 flex flex-wrap gap-2 items-center">
+              <span className="text-sm text-slate-500 font-semibold mr-2">DETECTED MODULATIONS:</span>
+              {analysis.modulations.map((mod, i) => (
+                <span key={i} className="px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 text-sm font-medium">
+                  {mod}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Chords Grid */}
-      <div className="mb-4 flex items-center justify-between">
-        <h3 className="text-2xl font-bold text-white">Detected Progression</h3>
-        <span className="text-xs text-slate-500 bg-slate-900 px-3 py-1 rounded-full border border-slate-800">
-          {analysis.chords.length} Events
+      <div className="mb-6 flex items-end justify-between border-b border-slate-800 pb-4">
+        <div>
+          <h3 className="text-3xl font-black text-white tracking-tight">Timeline</h3>
+          <p className="text-slate-500 text-sm mt-1">Chronological chord progression detected</p>
+        </div>
+        <span className="text-xs font-mono text-indigo-400 bg-indigo-900/20 px-3 py-1 rounded-full border border-indigo-900/50">
+          {analysis.chords.length} EVENTS
         </span>
       </div>
       
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
         {analysis.chords.map((chord, idx) => (
           <ChordCard key={idx} chord={chord} />
         ))}
