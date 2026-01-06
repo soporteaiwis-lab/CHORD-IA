@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { SongAnalysis, ChordEvent, AudioMetadata, AnalysisLevel } from '../types';
 
@@ -6,7 +7,7 @@ interface AnalysisResultProps {
   metadata: AudioMetadata | null;
 }
 
-// --- ULTIMATE STRING CLEANER ---
+// --- STRING CLEANER ---
 const cleanStr = (str: any) => {
   if (!str) return '';
   const s = String(str).trim();
@@ -25,10 +26,6 @@ const getDisplayChord = (chord: ChordEvent, level: AnalysisLevel): string => {
   if (quality === 'major' || quality === 'maj') quality = ''; 
   if (quality === 'dominant' || quality === 'dom') quality = ''; 
 
-  // Format Extension
-  // If extension is "7", "9", etc., we just append it.
-  
-  // View Levels
   if (level === 'Basic') {
     return `${root}${quality}`; 
   }
@@ -39,12 +36,10 @@ const getDisplayChord = (chord: ChordEvent, level: AnalysisLevel): string => {
 
   // Advanced: Full Symbol
   const symbol = cleanStr(chord.symbol);
-  // If the AI provided a good symbol, use it, but check for "none" inside it
   if (symbol && symbol.length < 15 && !symbol.toLowerCase().includes('none')) {
       return symbol;
   }
 
-  // Fallback construction
   return `${root}${quality}${extension}${bass && bass !== root ? `/${bass}` : ''}`;
 };
 
@@ -56,6 +51,7 @@ const MoisesPlayer: React.FC<{
   onTimeUpdate: (time: number) => void
 }> = ({ audioUrl, duration, analysis, onTimeUpdate }) => {
   const audioRef = useRef<HTMLAudioElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   
   // Player State
   const [isPlaying, setIsPlaying] = useState(false);
@@ -73,13 +69,12 @@ const MoisesPlayer: React.FC<{
   const gridMarkers = useMemo(() => {
     if (!analysis.bpm || !analysis.timeSignature) return [];
     
-    const bpm = analysis.bpm;
+    const bpm = analysis.bpm || 120;
     const timeSig = analysis.timeSignature.includes('/') ? analysis.timeSignature : '4/4';
     const [beatsPerBar] = timeSig.split('/').map(Number);
     const secondsPerBeat = 60 / bpm;
     const markers = [];
     
-    // Create markers slightly beyond duration to cover fade out
     for (let t = 0; t < duration + 5; t += secondsPerBeat) {
       const beatIndex = Math.round(t / secondsPerBeat);
       const isMeasureStart = beatIndex % beatsPerBar === 0;
@@ -98,11 +93,10 @@ const MoisesPlayer: React.FC<{
     
     const update = () => {
       if (audioRef.current) {
+        // Use audio.currentTime as the source of truth
         const time = audioRef.current.currentTime;
-        if (time !== currentTime) {
-            setCurrentTime(time);
-            onTimeUpdate(time);
-        }
+        setCurrentTime(time);
+        onTimeUpdate(time);
       }
       if (isPlaying) {
         animationFrameId = requestAnimationFrame(update);
@@ -111,12 +105,17 @@ const MoisesPlayer: React.FC<{
 
     if (isPlaying) {
       animationFrameId = requestAnimationFrame(update);
+    } else {
+      // One last update when stopping to ensure sync
+      if (audioRef.current) {
+         setCurrentTime(audioRef.current.currentTime);
+      }
     }
 
     return () => cancelAnimationFrame(animationFrameId);
-  }, [isPlaying, onTimeUpdate, currentTime]); 
+  }, [isPlaying, onTimeUpdate]); // Intentionally minimal deps
 
-  // --- PHASE-LOCKED METRONOME ---
+  // --- METRONOME ---
   const audioContextRef = useRef<AudioContext | null>(null);
   const nextClickTimeRef = useRef<number>(0);
   const schedulerTimerRef = useRef<number | null>(null);
@@ -135,31 +134,30 @@ const MoisesPlayer: React.FC<{
     const currentAudioTime = audioRef.current.currentTime;
     const ctxNow = ctx.currentTime;
     
-    // Calculate Sync
+    // Calculate precise beat position relative to audio time
     const nextBeatIndex = Math.ceil(currentAudioTime / secondsPerBeat);
     const nextBeatAudioTime = nextBeatIndex * secondsPerBeat;
     
-    // Time delta from "now"
+    // Calculate when that beat should happen in AudioContext time
+    // We adjust for playback rate here
     let timeUntilNextBeat = (nextBeatAudioTime - currentAudioTime) / playbackRate;
-    
-    // If very close to next beat (within 5ms), it might have just passed or is immediate
     if (timeUntilNextBeat < 0) timeUntilNextBeat = 0;
 
     const targetCtxTime = ctxNow + timeUntilNextBeat;
 
-    // Resync if drift > 50ms
+    // Phase-lock: Snap strictly to the target time calculated from audio position
+    // If the next scheduled click is "drifted" from where the audio says it should be, fix it.
     if (Math.abs(nextClickTimeRef.current - targetCtxTime) > 0.05) {
        nextClickTimeRef.current = targetCtxTime;
     }
 
-    // Schedule queue
+    // Schedule
     while (nextClickTimeRef.current < ctx.currentTime + scheduleAheadTime) {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.connect(gain);
       gain.connect(ctx.destination);
 
-      // Metronome Sound (Woodblock-ish)
       osc.frequency.setValueAtTime(1000, nextClickTimeRef.current);
       osc.frequency.exponentialRampToValueAtTime(1, nextClickTimeRef.current + 0.05);
       
@@ -182,6 +180,7 @@ const MoisesPlayer: React.FC<{
         }
         if (audioContextRef.current.state === 'suspended') audioContextRef.current.resume();
         
+        // Initial sync point
         nextClickTimeRef.current = audioContextRef.current.currentTime; 
         scheduleClicks();
     } else {
@@ -213,12 +212,20 @@ const MoisesPlayer: React.FC<{
 
   return (
     <div className="w-full max-w-6xl mx-auto bg-slate-900 rounded-3xl border border-slate-700 overflow-hidden shadow-2xl relative mb-12">
-      <audio ref={audioRef} src={audioUrl} onEnded={() => setIsPlaying(false)} />
+      <audio 
+        ref={audioRef} 
+        src={audioUrl} 
+        onEnded={() => setIsPlaying(false)} 
+        // Sync on native timeupdate for backup
+        onTimeUpdate={(e) => {
+            if (!isPlaying) setCurrentTime(e.currentTarget.currentTime);
+        }}
+      />
       
       {/* --- VISUALIZER AREA --- */}
       <div className="relative bg-slate-950 h-80 overflow-hidden border-b border-slate-800 select-none">
          
-         {/* PLAYHEAD (Fixed Center) */}
+         {/* PLAYHEAD */}
          <div className="absolute left-1/2 top-0 bottom-0 w-0.5 bg-indigo-500 z-50 shadow-[0_0_15px_indigo]"></div>
          <div className="absolute left-1/2 top-4 -translate-x-1/2 bg-indigo-600 text-[10px] font-bold px-2 py-0.5 rounded-full text-white z-50 shadow-lg">NOW</div>
 
@@ -227,10 +234,9 @@ const MoisesPlayer: React.FC<{
            className="absolute top-0 bottom-0 left-1/2 will-change-transform"
            style={{ transform: `translate3d(${-currentTime * FIXED_PPS}px, 0, 0)` }}
          >
-            {/* 1. GRID LAYER (Background) */}
+            {/* 1. GRID LAYER */}
             <div className="absolute top-0 bottom-0 pointer-events-none">
               {gridMarkers.map((marker, i) => {
-                 // Optimization: Only render markers near the viewport (wider buffer)
                  if (Math.abs(marker.time - currentTime) > 15) return null; 
                  return (
                     <div 
@@ -248,7 +254,7 @@ const MoisesPlayer: React.FC<{
               })}
             </div>
 
-            {/* 2. SECTIONS LAYER (Top) */}
+            {/* 2. SECTIONS LAYER */}
             <div className="absolute top-0 h-8 flex border-b border-slate-800">
                {analysis.sections?.map((section, i) => (
                  <div 
@@ -266,10 +272,9 @@ const MoisesPlayer: React.FC<{
                ))}
             </div>
 
-            {/* 3. CHORDS LAYER (Main) */}
+            {/* 3. CHORDS LAYER */}
             <div className="absolute top-12 bottom-8">
                {analysis.chords.map((chord, i) => {
-                 // Optimization: Only render chords near viewport
                  if (chord.seconds > currentTime + 12 || (chord.seconds + chord.duration) < currentTime - 12) return null;
 
                  const isActive = activeChord === chord;
