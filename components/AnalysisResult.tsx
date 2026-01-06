@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { SongAnalysis, ChordEvent, AudioMetadata, AnalysisLevel } from '../types';
 
@@ -10,35 +9,40 @@ interface AnalysisResultProps {
 // --- ULTIMATE STRING CLEANER ---
 const cleanStr = (str: any) => {
   if (!str) return '';
-  const s = String(str).trim().toLowerCase();
-  if (['none', 'null', 'undefined', 'n/a', 'nan'].includes(s)) return '';
-  return String(str).trim();
+  const s = String(str).trim();
+  if (['none', 'null', 'undefined', 'n/a', 'nan', 'NONE', 'NULL'].includes(s)) return '';
+  return s;
 };
 
 const getDisplayChord = (chord: ChordEvent, level: AnalysisLevel): string => {
   const root = cleanStr(chord.root);
-  let quality = cleanStr(chord.quality);
+  let quality = cleanStr(chord.quality).toLowerCase();
   let extension = cleanStr(chord.extension);
   let bass = cleanStr(chord.bass);
   
   // Normalize quality
   if (quality === 'minor' || quality === 'min') quality = 'm';
-  if (quality === 'major' || quality === 'maj') quality = ''; // Standard notation: Cmaj -> C
+  if (quality === 'major' || quality === 'maj') quality = ''; 
+  if (quality === 'dominant' || quality === 'dom') quality = ''; 
+
+  // Format Extension
+  // If extension is "7", "9", etc., we just append it.
   
-  // Safety: If it's a simple triad, prevent "C7" if strictly Basic
+  // View Levels
   if (level === 'Basic') {
     return `${root}${quality}`; 
   }
 
   if (level === 'Intermediate') {
-    // Show 7ths/9ths but ignore bass inversions if simpler reading is desired
     return `${root}${quality}${extension}`;
   }
 
-  // Advanced: Show everything
-  // Prefer the pre-calculated symbol if it looks valid
+  // Advanced: Full Symbol
   const symbol = cleanStr(chord.symbol);
-  if (symbol && symbol.length < 12 && !symbol.includes('none')) return symbol;
+  // If the AI provided a good symbol, use it, but check for "none" inside it
+  if (symbol && symbol.length < 15 && !symbol.toLowerCase().includes('none')) {
+      return symbol;
+  }
 
   // Fallback construction
   return `${root}${quality}${extension}${bass && bass !== root ? `/${bass}` : ''}`;
@@ -70,7 +74,8 @@ const MoisesPlayer: React.FC<{
     if (!analysis.bpm || !analysis.timeSignature) return [];
     
     const bpm = analysis.bpm;
-    const [beatsPerBar] = analysis.timeSignature.split('/').map(Number);
+    const timeSig = analysis.timeSignature.includes('/') ? analysis.timeSignature : '4/4';
+    const [beatsPerBar] = timeSig.split('/').map(Number);
     const secondsPerBeat = 60 / bpm;
     const markers = [];
     
@@ -90,21 +95,28 @@ const MoisesPlayer: React.FC<{
   // --- AUDIO SYNC LOOP ---
   useEffect(() => {
     let animationFrameId: number;
-    const tick = () => {
-      if (audioRef.current && !audioRef.current.paused) {
+    
+    const update = () => {
+      if (audioRef.current) {
         const time = audioRef.current.currentTime;
-        setCurrentTime(time);
-        onTimeUpdate(time);
-        animationFrameId = requestAnimationFrame(tick);
+        if (time !== currentTime) {
+            setCurrentTime(time);
+            onTimeUpdate(time);
+        }
+      }
+      if (isPlaying) {
+        animationFrameId = requestAnimationFrame(update);
       }
     };
-    if (isPlaying) animationFrameId = requestAnimationFrame(tick);
+
+    if (isPlaying) {
+      animationFrameId = requestAnimationFrame(update);
+    }
+
     return () => cancelAnimationFrame(animationFrameId);
-  }, [isPlaying, onTimeUpdate]);
+  }, [isPlaying, onTimeUpdate, currentTime]); 
 
   // --- PHASE-LOCKED METRONOME ---
-  // This approach is much more stable than previous ones. 
-  // It checks "Are we at a beat?" relative to audio time, rather than scheduling blindly.
   const audioContextRef = useRef<AudioContext | null>(null);
   const nextClickTimeRef = useRef<number>(0);
   const schedulerTimerRef = useRef<number | null>(null);
@@ -116,31 +128,27 @@ const MoisesPlayer: React.FC<{
     const lookahead = 25.0; // ms
     const scheduleAheadTime = 0.1; // sec
     
-    // IMPORTANT: Re-calculate strict sync based on Audio Element current time
-    // This prevents drift over time.
     const bpm = analysis.bpm || 120;
-    const secondsPerBeat = (60.0 / bpm); // Base beat duration
-    const secondsPerBeatScaled = secondsPerBeat / playbackRate; // Adjusted for speed
+    const secondsPerBeat = (60.0 / bpm); 
+    const secondsPerBeatScaled = secondsPerBeat / playbackRate; 
 
-    // Current Audio Time
     const currentAudioTime = audioRef.current.currentTime;
-    
-    // AudioContext time corresponding to "Now"
     const ctxNow = ctx.currentTime;
     
-    // If we drifted or seeked, reset the next click target
-    // Find the next beat that hasn't happened yet relative to audio time
+    // Calculate Sync
     const nextBeatIndex = Math.ceil(currentAudioTime / secondsPerBeat);
     const nextBeatAudioTime = nextBeatIndex * secondsPerBeat;
     
-    // The delay from "now" until that beat happens (scaled by playback rate)
-    const timeUntilNextBeat = (nextBeatAudioTime - currentAudioTime) / playbackRate;
+    // Time delta from "now"
+    let timeUntilNextBeat = (nextBeatAudioTime - currentAudioTime) / playbackRate;
     
-    // Expected AudioContext time for that click
+    // If very close to next beat (within 5ms), it might have just passed or is immediate
+    if (timeUntilNextBeat < 0) timeUntilNextBeat = 0;
+
     const targetCtxTime = ctxNow + timeUntilNextBeat;
 
-    // If our scheduled time is way off (seek happened), snap to the calculated target
-    if (Math.abs(nextClickTimeRef.current - targetCtxTime) > 0.2) {
+    // Resync if drift > 50ms
+    if (Math.abs(nextClickTimeRef.current - targetCtxTime) > 0.05) {
        nextClickTimeRef.current = targetCtxTime;
     }
 
@@ -151,14 +159,16 @@ const MoisesPlayer: React.FC<{
       osc.connect(gain);
       gain.connect(ctx.destination);
 
-      // Metronome Sound
-      osc.frequency.value = 1000;
-      gain.gain.value = 0.15;
+      // Metronome Sound (Woodblock-ish)
+      osc.frequency.setValueAtTime(1000, nextClickTimeRef.current);
+      osc.frequency.exponentialRampToValueAtTime(1, nextClickTimeRef.current + 0.05);
+      
+      gain.gain.setValueAtTime(0.3, nextClickTimeRef.current);
+      gain.gain.exponentialRampToValueAtTime(0.001, nextClickTimeRef.current + 0.05);
       
       osc.start(nextClickTimeRef.current);
       osc.stop(nextClickTimeRef.current + 0.05);
 
-      // Advance one beat
       nextClickTimeRef.current += secondsPerBeatScaled;
     }
 
@@ -172,7 +182,6 @@ const MoisesPlayer: React.FC<{
         }
         if (audioContextRef.current.state === 'suspended') audioContextRef.current.resume();
         
-        // Initial Snap
         nextClickTimeRef.current = audioContextRef.current.currentTime; 
         scheduleClicks();
     } else {
@@ -197,7 +206,6 @@ const MoisesPlayer: React.FC<{
       audioRef.current.currentTime = time;
       setCurrentTime(time);
       onTimeUpdate(time);
-      // Reset metronome scheduler triggers automatically via effect/logic
     }
   };
 
@@ -222,8 +230,8 @@ const MoisesPlayer: React.FC<{
             {/* 1. GRID LAYER (Background) */}
             <div className="absolute top-0 bottom-0 pointer-events-none">
               {gridMarkers.map((marker, i) => {
-                 // Optimization: Only render markers near the viewport
-                 if (Math.abs(marker.time - currentTime) > 10) return null; 
+                 // Optimization: Only render markers near the viewport (wider buffer)
+                 if (Math.abs(marker.time - currentTime) > 15) return null; 
                  return (
                     <div 
                       key={i}
@@ -262,7 +270,7 @@ const MoisesPlayer: React.FC<{
             <div className="absolute top-12 bottom-8">
                {analysis.chords.map((chord, i) => {
                  // Optimization: Only render chords near viewport
-                 if (chord.seconds > currentTime + 10 || (chord.seconds + chord.duration) < currentTime - 10) return null;
+                 if (chord.seconds > currentTime + 12 || (chord.seconds + chord.duration) < currentTime - 12) return null;
 
                  const isActive = activeChord === chord;
                  const chordName = getDisplayChord(chord, complexity);
@@ -271,13 +279,13 @@ const MoisesPlayer: React.FC<{
                  return (
                    <div 
                      key={i}
-                     className={`absolute top-0 bottom-0 flex flex-col justify-center items-center border-l border-white/10 transition-all duration-100 ${isActive ? 'bg-white/5 backdrop-blur-sm z-20 shadow-[0_0_30px_rgba(255,255,255,0.05)]' : ''}`}
+                     className={`absolute top-0 bottom-0 flex flex-col justify-center items-center border-l border-white/10 transition-all duration-75 ${isActive ? 'bg-white/5 backdrop-blur-sm z-20 shadow-[0_0_30px_rgba(255,255,255,0.05)]' : ''}`}
                      style={{
                         left: `${chord.seconds * FIXED_PPS}px`,
                         width: `${width}px`
                      }}
                    >
-                      <div className={`text-center px-2 transition-transform duration-200 ${isActive ? 'scale-110' : 'scale-100 opacity-70'}`}>
+                      <div className={`text-center px-2 transition-transform duration-100 ${isActive ? 'scale-110' : 'scale-100 opacity-70'}`}>
                          <div className={`font-black tracking-tighter ${isActive ? 'text-white text-4xl drop-shadow-md' : 'text-slate-500 text-2xl'}`}>
                             {chordName}
                          </div>
@@ -383,98 +391,52 @@ const MoisesPlayer: React.FC<{
 };
 
 export const AnalysisResult: React.FC<AnalysisResultProps> = ({ analysis, metadata }) => {
-  const [currentTime, setCurrentTime] = useState(0);
-  const [complexity, setComplexity] = useState<AnalysisLevel>('Advanced');
-
   if (!analysis) return null;
 
   return (
-    <div className="max-w-7xl mx-auto mt-8 px-4 pb-24">
-      {/* Title Header */}
-      <div className="text-center mb-8">
-         <h1 className="text-3xl font-black text-white">{analysis.title || metadata?.fileName}</h1>
-         <p className="text-slate-400">{analysis.artist || 'Unknown Artist'}</p>
-      </div>
-
-      {metadata?.audioUrl && (
-        <MoisesPlayer 
-           audioUrl={metadata.audioUrl} 
-           duration={metadata.duration} 
-           analysis={analysis} 
-           onTimeUpdate={setCurrentTime}
-        />
-      )}
+    <div className="w-full animate-fade-in">
+      <MoisesPlayer 
+        audioUrl={metadata?.audioUrl} 
+        duration={metadata?.duration || 0} 
+        analysis={analysis} 
+        onTimeUpdate={() => {}}
+      />
       
-      {/* Harmonic Grid Table */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-1 space-y-6">
-           <div className="bg-slate-900/50 p-6 rounded-2xl border border-white/5">
-              <h3 className="text-lg font-bold text-white mb-2">Harmonic Insights</h3>
-              <p className="text-slate-300 leading-relaxed text-sm">{analysis.summary}</p>
-           </div>
-           
-           <div className="bg-slate-900/50 p-6 rounded-2xl border border-white/5">
-              <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4">Structure</h3>
-              <div className="space-y-2">
-                 {analysis.sections?.map((sec, i) => (
-                    <div key={i} className="flex justify-between items-center text-sm border-b border-white/5 pb-2 last:border-0">
-                       <span className="flex items-center gap-2">
-                          <span className="w-3 h-3 rounded-full" style={{ backgroundColor: sec.color || '#475569' }}></span>
-                          <span className="text-white font-medium">{sec.name}</span>
-                       </span>
-                       <span className="font-mono text-slate-500">{Math.floor(sec.startTime/60)}:{Math.floor(sec.startTime%60).toString().padStart(2,'0')}</span>
-                    </div>
-                 ))}
-              </div>
-           </div>
+      {/* Song Details Cards */}
+      <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
+        <div className="bg-slate-900/50 backdrop-blur-sm p-8 rounded-3xl border border-slate-800">
+           <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+             <svg className="w-5 h-5 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+             Harmonic Summary
+           </h3>
+           <p className="text-slate-400 leading-relaxed text-sm">
+             {analysis.summary}
+           </p>
         </div>
 
-        <div className="lg:col-span-2">
-           <div className="bg-slate-900 rounded-2xl border border-slate-700 overflow-hidden shadow-xl">
-              <div className="p-4 bg-slate-950 border-b border-slate-800 flex justify-between items-center">
-                 <h3 className="text-lg font-bold text-white">Harmonic Timeline</h3>
-                 <span className="text-xs bg-indigo-900/30 text-indigo-400 px-2 py-1 rounded border border-indigo-500/30 font-mono">
-                    A=440Hz
-                 </span>
+        <div className="bg-slate-900/50 backdrop-blur-sm p-8 rounded-3xl border border-slate-800">
+           <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+             <svg className="w-5 h-5 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+             Metadata
+           </h3>
+           <div className="space-y-3">
+              <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+                 <span className="text-slate-500 text-sm font-medium">Title</span>
+                 <span className="text-white font-bold">{analysis.title || "Unknown Title"}</span>
               </div>
-              <div className="max-h-[500px] overflow-y-auto">
-                 <table className="w-full text-left text-sm">
-                    <thead className="bg-slate-950 sticky top-0 z-10 shadow-lg">
-                       <tr>
-                          <th className="p-4 font-bold text-slate-500 uppercase tracking-wider text-xs">Time</th>
-                          <th className="p-4 font-bold text-slate-500 uppercase tracking-wider text-xs">Chord</th>
-                          <th className="p-4 font-bold text-slate-500 uppercase tracking-wider text-xs">Quality</th>
-                          <th className="p-4 font-bold text-slate-500 uppercase tracking-wider text-xs">Bass</th>
-                       </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-800">
-                       {analysis.chords.map((chord, i) => {
-                          const isActive = currentTime >= chord.seconds && currentTime < (chord.seconds + chord.duration);
-                          return (
-                            <tr 
-                              key={i} 
-                              className={`transition-colors ${isActive ? 'bg-indigo-900/20' : 'hover:bg-slate-800/50'} ${isActive ? 'border-l-4 border-indigo-500' : 'border-l-4 border-transparent'}`}
-                            >
-                               <td className={`p-4 font-mono whitespace-nowrap ${isActive ? 'text-indigo-300 font-bold' : 'text-slate-400'}`}>
-                                  {chord.timestamp} <span className="text-[10px] opacity-50 ml-1">({chord.seconds}s)</span>
-                               </td>
-                               <td className="p-4">
-                                  <span className={`text-lg font-black ${isActive ? 'text-white' : 'text-slate-200'}`}>
-                                     {getDisplayChord(chord, 'Advanced')}
-                                  </span>
-                               </td>
-                               <td className="p-4 text-slate-400">
-                                  <span className="capitalize">{cleanStr(chord.quality) || 'Maj'}</span>
-                                  {cleanStr(chord.extension) && <span className="ml-2 text-xs bg-slate-800 px-1.5 py-0.5 rounded text-slate-300">{cleanStr(chord.extension)}</span>}
-                               </td>
-                               <td className="p-4 text-slate-400 font-mono">
-                                  {cleanStr(chord.bass) || '-'}
-                               </td>
-                            </tr>
-                          );
-                       })}
-                    </tbody>
-                 </table>
+              <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+                 <span className="text-slate-500 text-sm font-medium">Artist</span>
+                 <span className="text-white font-bold">{analysis.artist || "Unknown Artist"}</span>
+              </div>
+              <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+                 <span className="text-slate-500 text-sm font-medium">Key</span>
+                 <span className="text-white font-bold bg-slate-800 px-2 py-0.5 rounded">{analysis.key}</span>
+              </div>
+              <div className="flex justify-between items-center pt-1">
+                 <span className="text-slate-500 text-sm font-medium">Complexity</span>
+                 <span className={`text-xs font-bold px-2 py-1 rounded uppercase tracking-wider ${analysis.complexityLevel === 'Advanced' ? 'bg-indigo-900/50 text-indigo-300' : 'bg-slate-800 text-slate-400'}`}>
+                   {analysis.complexityLevel}
+                 </span>
               </div>
            </div>
         </div>
