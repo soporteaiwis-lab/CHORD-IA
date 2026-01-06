@@ -1,117 +1,141 @@
 
 import { GoogleGenAI } from "@google/genai";
-import { SongAnalysis } from "../types";
+import { SongAnalysis, AnalysisLevel } from "../types";
 
 // Initialize the API client
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-// --- CONFIGURATION ---
-// Using gemini-2.0-flash-exp: The perfect balance of intelligence, speed, and availability (No 404s).
-const MODEL_ID = "gemini-2.0-flash-exp"; 
-
 // --- UTILS ---
 
-// The "Old Faithful" Extractor - Robust against markdown, conversational text, and whitespace
 const extractJSON = (text: string): any => {
-  if (!text) return null;
+  if (!text) throw new Error("Empty response from AI");
   
-  let jsonString = text.trim();
-
-  // 1. Clean Markdown code blocks if present
-  if (jsonString.includes('```')) {
-    jsonString = jsonString.replace(/```json/g, '').replace(/```/g, '');
-  }
-
-  // 2. Find the outer braces to ignore any intro/outro text
-  const firstBrace = jsonString.indexOf('{');
-  const lastBrace = jsonString.lastIndexOf('}');
+  let cleanText = text.trim();
+  cleanText = cleanText.replace(/```json/g, '').replace(/```/g, '');
+  
+  const firstBrace = cleanText.indexOf('{');
+  const lastBrace = cleanText.lastIndexOf('}');
   
   if (firstBrace !== -1 && lastBrace !== -1) {
-    jsonString = jsonString.substring(firstBrace, lastBrace + 1);
+    cleanText = cleanText.substring(firstBrace, lastBrace + 1);
   }
 
-  // 3. Manual cleanup for common JSON errors before parsing
-  // Ensure property names are double-quoted (fixes the specific error from your screenshot)
-  jsonString = jsonString.replace(/(\w+):/g, '"$1":'); 
-  
   try {
-    return JSON.parse(jsonString);
+    return JSON.parse(cleanText);
   } catch (e) {
     console.error("JSON Parse Failed. Raw text:", text);
-    // Last ditch effort: simple cleanup of trailing commas
-    try {
-        const cleaned = jsonString.replace(/,\s*}/g, '}').replace(/,\s*]/g, ']');
-        return JSON.parse(cleaned);
-    } catch (e2) {
-        throw new Error("Analysis produced invalid data format.");
-    }
+    throw new Error("Analysis failed to produce valid JSON data. Please try again.");
   }
 };
 
+const getLevelInstructions = (level: AnalysisLevel): string => {
+  switch (level) {
+    case 'Basic':
+      return `
+      **MODE: BASIC**
+      - Output ONLY Major/Minor Triads.
+      - Simplify Gmaj7 -> G, Dm9 -> Dm.
+      `;
+    case 'Intermediate':
+      return `
+      **MODE: INTERMEDIATE**
+      - Identify 7th chords.
+      - Identify slash chords.
+      `;
+    case 'Advanced':
+      return `
+      **MODE: ADVANCED**
+      - Detect extensions (9, 11, 13).
+      - Detect altered dominants.
+      - Exact bass inversions.
+      `;
+    default:
+      return "";
+  }
+};
+
+const COMMON_SCHEMA = `
+  STRICT JSON OUTPUT ONLY.
+  {
+    "key": "string",
+    "timeSignature": "string",
+    "bpmEstimate": "string",
+    "modulations": ["string"],
+    "complexityLevel": "string",
+    "summary": "string",
+    "chords": [
+      {
+        "timestamp": "string (e.g. '0:00')",
+        "symbol": "string",
+        "quality": "string",
+        "extensions": ["string"],
+        "bassNote": "string",
+        "confidence": number
+      }
+    ]
+  }
+`;
+
 // --- RETRY LOGIC ---
+
+const MODEL_ID = "gemini-3-flash-preview"; 
 const MAX_RETRIES = 3;
 const BASE_DELAY = 2000;
+
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-async function generateWithRetry(contents: any, config: any, retries = 0): Promise<any> {
+async function generateWithRetry(
+  contents: any, 
+  config: any, 
+  retries = 0
+): Promise<any> {
   try {
-    const result = await ai.models.generateContent({ model: MODEL_ID, contents, config });
-    if (!result.text) {
-      throw new Error("Model returned empty response");
-    }
-    return result;
+    console.log(`Analyzing with ${MODEL_ID} (Attempt ${retries + 1})`);
+    return await ai.models.generateContent({ model: MODEL_ID, contents, config });
   } catch (error: any) {
-    console.error(`Attempt ${retries + 1} failed:`, error);
-    if (retries < MAX_RETRIES) {
-      await delay(BASE_DELAY * Math.pow(2, retries));
+    const msg = error.message || error.toString();
+    const isTransient = msg.includes("503") || msg.includes("429") || msg.includes("Busy") || msg.includes("Overloaded");
+    
+    if (isTransient && retries < MAX_RETRIES) {
+      const waitTime = BASE_DELAY * Math.pow(2, retries);
+      console.warn(`Service Busy. Retrying in ${waitTime}ms...`);
+      await delay(waitTime);
       return generateWithRetry(contents, config, retries + 1);
     }
     throw error;
   }
 }
 
-// --- MAIN ANALYSIS ---
+// --- PUBLIC METHODS ---
 
-export const analyzeAudioContent = async (base64Data: string, mimeType: string, duration: number): Promise<SongAnalysis> => {
+export const analyzeAudioContent = async (base64Data: string, mimeType: string, level: AnalysisLevel, duration: number): Promise<SongAnalysis> => {
+  const levelPrompt = getLevelInstructions(level);
   const formattedDuration = `${Math.floor(duration / 60)}:${Math.floor(duration % 60).toString().padStart(2, '0')}`;
   
-  // We use the specific "Schema definition" inside the prompt instead of the config object.
-  // This is often more reliable for preventing "Structure" errors in the API.
+  // Reinforced prompt to address pitch shifting issues
   const prompt = `
-    Role: Virtuoso Music Theorist.
-    Task: Analyze this audio (${formattedDuration}) and return a JSON object.
-
-    CRITICAL RULES:
-    1. **Output ONLY valid JSON**. No markdown formatting, no conversation.
-    2. **Timing**: 'seconds' must be exact floats (e.g. 12.45).
-    3. **Values**: No "none" or "null" strings. Use "" for empty values.
+    Role: Absolute Pitch Audio Analyzer (Virtuoso Ear).
+    INPUT: Audio File (${formattedDuration}).
+    TASK: Extract harmonic chord progression.
     
-    JSON STRUCTURE TO FOLLOW:
-    {
-      "title": "string",
-      "artist": "string",
-      "key": "string",
-      "bpm": 120,
-      "timeSignature": "4/4",
-      "complexityLevel": "Advanced",
-      "summary": "string",
-      "sections": [
-        { "name": "Intro", "startTime": 0.0, "endTime": 10.0, "color": "#hex" }
-      ],
-      "chords": [
-        {
-          "timestamp": "0:00",
-          "seconds": 0.0,
-          "duration": 2.5,
-          "root": "C",
-          "quality": "maj",
-          "extension": "7",
-          "bass": "",
-          "symbol": "Cmaj7",
-          "confidence": 1.0
-        }
-      ]
-    }
+    CRITICAL INSTRUCTION ON TUNING:
+    - **STRICTLY ANCHOR TO STANDARD PITCH A4 = 440Hz.** 
+    - **DO NOT SHIFT PITCH.** A common error is detecting the key a semitone or whole tone too high (e.g., detecting C# when it is C). 
+    - Verify the lowest bass frequencies to ground the root. 
+    - If the audio is slightly detuned (e.g., old recording), calibrate to the closest standard pitch, but do not transpose the entire progression up.
+
+    STEPS:
+    1. Detect BPM & Key (Verify against 440Hz reference).
+    2. Track Root Movement.
+    3. Identify Chord Quality.
+    
+    ${levelPrompt}
+
+    RULES:
+    - Analyze from 0:00 to ${formattedDuration}.
+    - If modulation occurs, list it in "modulations".
+    
+    ${COMMON_SCHEMA}
   `;
 
   try {
@@ -123,31 +147,38 @@ export const analyzeAudioContent = async (base64Data: string, mimeType: string, 
     };
 
     const response = await generateWithRetry(contents, {
-      responseMimeType: "application/json", 
-      temperature: 0.2,
+      responseMimeType: "application/json",
+      temperature: 0.1, // Lower temperature for more deterministic/accurate analysis
       maxOutputTokens: 8192,
     });
 
-    const data = extractJSON(response.text);
-    if (!data) throw new Error("Parsed data was null");
-    return data;
+    return extractJSON(response.text);
 
   } catch (error: any) {
     console.error("Analysis Error:", error);
-    throw new Error(error.message || "Analysis failed.");
+    let msg = error.message || "Unknown error";
+    if (msg.includes("404")) msg = "Model unavailable. Please try again later.";
+    if (msg.includes("429")) msg = "Server traffic high. Please wait a moment.";
+    throw new Error(msg);
   }
 };
 
-export const analyzeSongFromUrl = async (url: string): Promise<SongAnalysis> => {
+export const analyzeSongFromUrl = async (url: string, level: AnalysisLevel): Promise<SongAnalysis> => {
+  const levelPrompt = getLevelInstructions(level);
+  
   const prompt = `
-    Role: Music Theorist. Analyze URL: "${url}".
-    Return ONLY valid JSON matching this structure:
-    {
-      "title": "string", "artist": "string", "key": "string", "bpm": number, "timeSignature": "string",
-      "sections": [{ "name": "string", "startTime": number, "endTime": number }],
-      "chords": [{ "seconds": number, "duration": number, "root": "string", "quality": "string", "extension": "string", "bass": "string", "symbol": "string", "confidence": number }],
-      "summary": "string", "complexityLevel": "string"
-    }
+    Role: Music Theorist.
+    TASK: Analyze song at URL: "${url}"
+    
+    CRITICAL: Ensure the key is detected based on standard Concert Pitch (A=440Hz). Do not transpose up/down.
+    
+    1. Identify song/artist.
+    2. Get studio harmony.
+    3. Output JSON.
+    
+    ${levelPrompt}
+
+    ${COMMON_SCHEMA}
   `;
 
   try {
@@ -157,6 +188,7 @@ export const analyzeSongFromUrl = async (url: string): Promise<SongAnalysis> => 
         tools: [{ googleSearch: {} }],
         maxOutputTokens: 8192,
     });
+
     return extractJSON(response.text);
   } catch (error: any) {
     throw new Error("Link analysis failed: " + error.message);
