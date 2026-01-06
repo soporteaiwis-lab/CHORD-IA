@@ -1,48 +1,75 @@
 
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import { SongAnalysis } from "../types";
 
 // Initialize the API client
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
+// --- CONFIGURATION ---
+// Using the latest recommended model for complex reasoning
+const MODEL_ID = "gemini-3-pro-preview"; 
+
+// --- SCHEMA DEFINITION ---
+// This enforces the AI to return ONLY valid JSON matching this structure.
+const chordSchema = {
+  type: Type.OBJECT,
+  properties: {
+    timestamp: { type: Type.STRING, description: "Display string like 0:00" },
+    seconds: { type: Type.NUMBER, description: "Exact start time in seconds (float)" },
+    duration: { type: Type.NUMBER, description: "Duration in seconds" },
+    root: { type: Type.STRING, description: "Root note (e.g., C, F#)" },
+    quality: { type: Type.STRING, description: "Quality (m, maj, dim, aug, dom)" },
+    extension: { type: Type.STRING, description: "Extension (7, 9, 11) or empty string" },
+    bass: { type: Type.STRING, description: "Bass note if inverted, or empty string" },
+    symbol: { type: Type.STRING, description: "Full chord symbol (e.g., Cm7/Eb)" },
+    confidence: { type: Type.NUMBER },
+  },
+  required: ["seconds", "duration", "root", "quality", "symbol"]
+};
+
+const sectionSchema = {
+  type: Type.OBJECT,
+  properties: {
+    name: { type: Type.STRING },
+    startTime: { type: Type.NUMBER },
+    endTime: { type: Type.NUMBER },
+    color: { type: Type.STRING },
+  },
+  required: ["name", "startTime", "endTime"]
+};
+
+const analysisResponseSchema = {
+  type: Type.OBJECT,
+  properties: {
+    title: { type: Type.STRING },
+    artist: { type: Type.STRING },
+    key: { type: Type.STRING },
+    bpm: { type: Type.INTEGER },
+    timeSignature: { type: Type.STRING },
+    complexityLevel: { type: Type.STRING },
+    summary: { type: Type.STRING },
+    sections: { type: Type.ARRAY, items: sectionSchema },
+    chords: { type: Type.ARRAY, items: chordSchema },
+  },
+  required: ["title", "key", "bpm", "timeSignature", "sections", "chords", "summary"]
+};
+
 // --- UTILS ---
 
 const extractJSON = (text: string): any => {
   if (!text) return null;
-  
-  // 1. Try to find the JSON block marked with markdown
-  let jsonString = text.trim();
-  const markdownMatch = jsonString.match(/```json\n([\s\S]*?)\n```/);
-  if (markdownMatch) {
-    jsonString = markdownMatch[1];
-  } else {
-    // 2. If no markdown, find the outer braces manually
-    const firstBrace = jsonString.indexOf('{');
-    const lastBrace = jsonString.lastIndexOf('}');
-    
-    if (firstBrace !== -1 && lastBrace !== -1) {
-      jsonString = jsonString.substring(firstBrace, lastBrace + 1);
-    }
-  }
-
-  // 3. Attempt parse
+  // With responseSchema, the text should be pure JSON, but we keep a safety check
   try {
-    return JSON.parse(jsonString);
+    return JSON.parse(text);
   } catch (e) {
-    console.error("JSON Parse Failed. Raw text segment:", jsonString.substring(0, 100) + "...");
-    // Fallback: try to cleanup common trailing comma errors if simple parse fails
-    try {
-        const cleaned = jsonString.replace(/,\s*}/g, '}').replace(/,\s*]/g, ']');
-        return JSON.parse(cleaned);
-    } catch (e2) {
-        throw new Error("Analysis produced invalid data format. Please try again.");
-    }
+    // Fallback cleanup if the model somehow ignores schema (unlikely with gemini-3)
+    console.warn("Raw JSON parse failed, attempting cleanup", text.substring(0, 50));
+    const cleanText = text.replace(/```json/g, '').replace(/```/g, '').trim();
+    return JSON.parse(cleanText);
   }
 };
 
 // --- RETRY LOGIC ---
-// USING GEMINI 1.5 PRO - The most stable model for complex, structured JSON analysis currently.
-const MODEL_ID = "gemini-1.5-pro"; 
 const MAX_RETRIES = 3;
 const BASE_DELAY = 2000;
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -56,7 +83,7 @@ async function generateWithRetry(contents: any, config: any, retries = 0): Promi
     return result;
   } catch (error: any) {
     console.error(`Attempt ${retries + 1} failed:`, error);
-    // Retry on 503 (Server Overload) or 429 (Rate Limit) or empty response
+    // Retry on 503 (Server Overload) or 429 (Rate Limit)
     if (retries < MAX_RETRIES) {
       await delay(BASE_DELAY * Math.pow(2, retries));
       return generateWithRetry(contents, config, retries + 1);
@@ -71,44 +98,15 @@ export const analyzeAudioContent = async (base64Data: string, mimeType: string, 
   const formattedDuration = `${Math.floor(duration / 60)}:${Math.floor(duration % 60).toString().padStart(2, '0')}`;
   
   const prompt = `
-    Role: World-Class Music Theorist & Audio Engineer.
-    Task: Analyze this audio (${formattedDuration}) to create a precise, beat-synchronized harmonic map.
+    Role: World-Class Music Theorist.
+    Task: Analyze this audio (${formattedDuration}).
 
-    CRITICAL INSTRUCTIONS:
-    1. **TIMING PRECISION**: The 'seconds' field must be an EXACT float (e.g., 12.45). Do not round to integers. Sync must be perfect.
-    2. **DATA CLEANLINESS**: 
-       - NEVER use strings like "none", "null", "N/A", "unknown". 
-       - If a chord has no extension, use empty string "".
-       - If a chord is in root position, use empty string "" for bass.
-    3. **ANALYSIS SCOPE**: Analyze the ENTIRE file from 0:00 to the end.
-    4. **FORMAT**: Return ONLY valid JSON.
-
-    JSON STRUCTURE:
-    {
-      "title": "Song Title",
-      "artist": "Artist Name",
-      "key": "Key (e.g. C Minor)",
-      "bpm": 120,
-      "timeSignature": "4/4",
-      "complexityLevel": "Intermediate",
-      "summary": "Concise harmonic summary.",
-      "sections": [
-        { "name": "Intro", "startTime": 0.0, "endTime": 8.5, "color": "#475569" }
-      ],
-      "chords": [
-        {
-          "timestamp": "0:00",
-          "seconds": 0.0,
-          "duration": 2.15,
-          "root": "C",
-          "quality": "m", 
-          "extension": "7", 
-          "bass": "Eb", 
-          "symbol": "Cm7/Eb",
-          "confidence": 1.0
-        }
-      ]
-    }
+    INSTRUCTIONS:
+    1. **Precision**: 'seconds' must be exact floats. 'bpm' must be integer.
+    2. **Format**: NO "none", "null", or "N/A" strings. Use empty strings "" for missing values.
+    3. **Scope**: Analyze the FULL audio.
+    
+    Output strictly matches the provided JSON schema.
   `;
 
   try {
@@ -119,10 +117,12 @@ export const analyzeAudioContent = async (base64Data: string, mimeType: string, 
       ] 
     };
 
+    // We use responseSchema to guarantee valid JSON and avoid 404s from deprecated models
     const response = await generateWithRetry(contents, {
       responseMimeType: "application/json",
-      temperature: 0.1, // Very low temp for strict adherence to facts and timing
+      responseSchema: analysisResponseSchema,
       maxOutputTokens: 8192,
+      temperature: 0.1,
     });
 
     const data = extractJSON(response.text);
@@ -138,19 +138,21 @@ export const analyzeAudioContent = async (base64Data: string, mimeType: string, 
 export const analyzeSongFromUrl = async (url: string): Promise<SongAnalysis> => {
   const prompt = `
     Role: Music Theorist. Analyze URL: "${url}".
-    REQUIREMENT: Provide exact second-by-second harmonic changes. 
-    Strict JSON output only. No "none" strings.
+    REQUIREMENT: Provide exact second-by-second harmonic changes.
     
-    Output Schema:
+    Output strictly matches this JSON structure:
     {
       "title": "string", "artist": "string", "key": "string", "bpm": number, "timeSignature": "string",
       "sections": [{ "name": "string", "startTime": number, "endTime": number }],
-      "chords": [{ "seconds": number, "duration": number, "root": "string", "quality": "string", "extension": "string", "bass": "string", "symbol": "string", "confidence": number }]
+      "chords": [{ "seconds": number, "duration": number, "root": "string", "quality": "string", "extension": "string", "bass": "string", "symbol": "string", "confidence": number }],
+      "summary": "string", "complexityLevel": "string"
     }
   `;
 
   try {
     const contents = { parts: [{ text: prompt }] };
+    // Google Search tool can't always be used with responseSchema in strict mode, 
+    // so we rely on prompt engineering for the URL link analysis, but use the new Model ID.
     const response = await generateWithRetry(contents, {
         responseMimeType: "application/json",
         tools: [{ googleSearch: {} }],
