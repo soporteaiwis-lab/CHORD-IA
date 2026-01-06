@@ -10,6 +10,7 @@ const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 const extractJSON = (text: string): any => {
   if (!text) throw new Error("Empty response from AI");
   let cleanText = text.trim();
+  // Aggressive cleanup to ensure valid JSON
   cleanText = cleanText.replace(/```json/g, '').replace(/```/g, '');
   const firstBrace = cleanText.indexOf('{');
   const lastBrace = cleanText.lastIndexOf('}');
@@ -25,7 +26,8 @@ const extractJSON = (text: string): any => {
 };
 
 // --- RETRY LOGIC ---
-const MODEL_ID = "gemini-3-flash-preview"; 
+// CHANGED: Using PRO model for complex reasoning and better timing accuracy
+const MODEL_ID = "gemini-3-pro-preview"; 
 const MAX_RETRIES = 3;
 const BASE_DELAY = 2000;
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -48,26 +50,32 @@ export const analyzeAudioContent = async (base64Data: string, mimeType: string, 
   const formattedDuration = `${Math.floor(duration / 60)}:${Math.floor(duration % 60).toString().padStart(2, '0')}`;
   
   const prompt = `
-    Role: Virtuoso Music Theorist & Audio Engineer.
-    Task: Analyze the audio file (${formattedDuration}) and extract the EXACT Harmonic Rhythm.
+    Role: World-Class Audio Engineer & Music Theorist.
+    Task: Perform a forensic harmonic analysis of this audio (${formattedDuration}).
 
-    CRITICAL INSTRUCTIONS FOR SYNC:
-    1. **MICRO-TIMING IS REQUIRED**: Do NOT just list one chord per bar. If a chord changes on the 'and' of beat 4, or if there is a passing chord for 0.5 seconds, YOU MUST LIST IT.
-    2. **EXACT TIMESTAMPS**: The \`seconds\` field must be the precise float value (e.g., 12.45) where the audio changes harmony.
-    3. **PITCH STANDARD**: Anchor strictly to A=440Hz. Verify bass frequencies to determine inversions.
-    4. **SECTIONS**: Identify Intro, Verses, Choruses, Bridges with exact start/end times.
+    CRITICAL: WE NEED ABSOLUTE TIMING PRECISION.
+    1. **Sync**: Do not approximate to the measure. If a chord anticipates the beat by 0.1s, mark it exactly.
+    2. **Drift Check**: Ensure the timestamps do not drift. The final chord must match the audio end.
+    3. **Cleanup**: NEVER return the string "none", "null", "undefined" for any field. If a field is empty, return an empty string "".
 
-    OUTPUT JSON SCHEMA (Strictly follow this):
+    INSTRUCTIONS FOR CHORD FIELDS:
+    - **root**: C, C#, Db, etc.
+    - **quality**: 'm' (minor), 'maj' (major), 'dim' (diminished), 'aug' (augmented), 'sus4', 'sus2', 'dom' (dominant). NO "major" or "minor" long form.
+    - **extension**: '7', '9', '11', '13', 'maj7', 'm7'. Leave EMPTY "" if it's a triad.
+    - **bass**: The bass note if inverted. Leave EMPTY "" if root position.
+    - **symbol**: The pro-level symbol (e.g. "Bbmaj9/D").
+
+    OUTPUT JSON SCHEMA:
     {
       "title": "Song Title",
       "artist": "Artist",
-      "key": "string",
-      "bpm": number,
-      "timeSignature": "string",
-      "complexityLevel": "string",
-      "summary": "Technical harmonic summary.",
+      "key": "Key (e.g. C Minor)",
+      "bpm": number (exact integer, e.g. 124),
+      "timeSignature": "4/4",
+      "complexityLevel": "Intermediate",
+      "summary": "Brief harmonic summary.",
       "sections": [
-        { "name": "Intro", "startTime": 0.0, "endTime": 12.5, "color": "#334155" }
+        { "name": "Intro", "startTime": 0.0, "endTime": 10.5, "color": "#475569" }
       ],
       "chords": [
         {
@@ -75,10 +83,10 @@ export const analyzeAudioContent = async (base64Data: string, mimeType: string, 
           "seconds": 0.0,
           "duration": 2.5,
           "root": "C",
-          "quality": "maj", 
-          "extension": "9", 
-          "bass": "E", 
-          "symbol": "Cmaj9/E",
+          "quality": "m", 
+          "extension": "7", 
+          "bass": "Eb", 
+          "symbol": "Cm7/Eb",
           "confidence": 0.99
         }
       ]
@@ -95,7 +103,9 @@ export const analyzeAudioContent = async (base64Data: string, mimeType: string, 
 
     const response = await generateWithRetry(contents, {
       responseMimeType: "application/json",
-      temperature: 0.1, // Zero temp for max analytical precision
+      // Thinking Config allows the model to "listen" closer before generating (Pro model feature)
+      // We set a budget to allow it to process the timeline logic
+      thinkingConfig: { thinkingBudget: 2048 }, 
       maxOutputTokens: 8192,
     });
 
@@ -109,7 +119,8 @@ export const analyzeAudioContent = async (base64Data: string, mimeType: string, 
 export const analyzeSongFromUrl = async (url: string): Promise<SongAnalysis> => {
   const prompt = `
     Role: Music Theorist. Analyze URL: "${url}".
-    REQUIREMENT: Provide exact second-by-second harmonic changes. Do not simplify to 1 chord per bar if there are more.
+    REQUIREMENT: Provide exact second-by-second harmonic changes. Use standard chord notation.
+    NO "none" strings in output. Use empty strings for missing values.
     
     Output JSON compatible with this schema:
     {
