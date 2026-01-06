@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { SongAnalysis, ChordEvent, AudioMetadata } from '../types';
 
@@ -14,6 +15,12 @@ const parseTime = (timeStr: string) => {
   return 0;
 };
 
+const extractBpm = (bpmString?: string): number => {
+  if (!bpmString) return 0;
+  const match = bpmString.match(/\d+/);
+  return match ? parseInt(match[0], 10) : 0;
+};
+
 // --- Player Controls Icons ---
 const Icons = {
   Play: () => <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>,
@@ -24,19 +31,38 @@ const Icons = {
   Rewind10: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0019 16V8a1 1 0 00-1.6-.8l-5.333 4zM4.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0011 16V8a1 1 0 00-1.6-.8l-5.334 4z" /></svg>,
   Forward10: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.933 12.8a1 1 0 000-1.6l-5.333-4A1 1 0 005 8v8a1 1 0 001.6.8l5.333-4zM19.933 12.8a1 1 0 000-1.6l-5.333-4A1 1 0 0013 8v8a1 1 0 001.6.8l5.333-4z" /></svg>,
   VolumeHigh: () => <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" /></svg>,
-  VolumeMute: () => <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" /></svg>
+  VolumeMute: () => <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" /></svg>,
+  Metronome: () => <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /><circle cx="12" cy="12" r="3" /></svg>
 };
 
 // --- Interactive Player Component ---
-const EnhancedAudioPlayer: React.FC<{ audioUrl?: string, duration: number, chords: ChordEvent[] }> = ({ audioUrl, duration, chords }) => {
+const EnhancedAudioPlayer: React.FC<{ 
+  audioUrl?: string, 
+  duration: number, 
+  chords: ChordEvent[],
+  bpm?: string 
+}> = ({ audioUrl, duration, chords, bpm }) => {
   const audioRef = useRef<HTMLAudioElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  
+  // Audio State
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
   const [waveformData, setWaveformData] = useState<number[]>([]);
-  const [isLoaded, setIsLoaded] = useState(false);
+  
+  // Metronome State
+  const [isMetronomeActive, setIsMetronomeActive] = useState(false);
+  const [bpmValue, setBpmValue] = useState(0);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const lastClickTimeRef = useRef<number>(0);
+
+  // Parse BPM on mount
+  useEffect(() => {
+    const val = extractBpm(bpm);
+    setBpmValue(val > 0 ? val : 120); // Default to 120 if not found
+  }, [bpm]);
 
   // Parse all chord timestamps once
   const parsedChords = React.useMemo(() => {
@@ -51,6 +77,8 @@ const EnhancedAudioPlayer: React.FC<{ audioUrl?: string, duration: number, chord
         const response = await fetch(audioUrl);
         const arrayBuffer = await response.arrayBuffer();
         const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        audioContextRef.current = audioContext; // Store context for metronome
+        
         const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
         const rawData = audioBuffer.getChannelData(0);
         const samples = 150; 
@@ -65,29 +93,82 @@ const EnhancedAudioPlayer: React.FC<{ audioUrl?: string, duration: number, chord
         }
         const multiplier = Math.pow(Math.max(...filteredData), -1);
         setWaveformData(filteredData.map(n => n * multiplier));
-        setIsLoaded(true);
       } catch (e) {
         console.error("Waveform Error", e);
       }
     };
     fetchAudio();
+    return () => {
+        if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+             audioContextRef.current.close();
+        }
+    }
   }, [audioUrl]);
 
-  // Audio Events
+  // Metronome Click Logic
+  const playClick = () => {
+     if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
+        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+     }
+     if (audioContextRef.current.state === 'suspended') {
+         audioContextRef.current.resume();
+     }
+
+     const osc = audioContextRef.current.createOscillator();
+     const gain = audioContextRef.current.createGain();
+
+     osc.connect(gain);
+     gain.connect(audioContextRef.current.destination);
+
+     osc.frequency.value = 1000; // High click
+     gain.gain.value = 0.3; // Volume
+
+     osc.start();
+     osc.stop(audioContextRef.current.currentTime + 0.05);
+  };
+
+  // Audio Events & Loop
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
 
-    const updateTime = () => setCurrentTime(audio.currentTime);
-    const handleEnd = () => { setIsPlaying(false); setCurrentTime(0); };
+    const updateTime = () => {
+      const curr = audio.currentTime;
+      setCurrentTime(curr);
+
+      // Metronome Sync Check
+      if (isMetronomeActive && isPlaying && bpmValue > 0) {
+         const secondsPerBeat = 60 / bpmValue;
+         // Calculate current beat number (decimal)
+         const currentBeat = curr / secondsPerBeat;
+         const floorBeat = Math.floor(currentBeat);
+         
+         // If we entered a new beat integer since last check
+         if (floorBeat > lastClickTimeRef.current) {
+             playClick();
+             lastClickTimeRef.current = floorBeat;
+         } else if (curr < 0.1) {
+             // Reset logic for seeking to start
+             lastClickTimeRef.current = -1;
+         }
+      }
+    };
+
+    const handleEnd = () => { 
+        setIsPlaying(false); 
+        setCurrentTime(0); 
+        lastClickTimeRef.current = 0; 
+    };
     
+    // We use timeupdate, but for high-precision visual/metronome sync, requestAnimationFrame would be better.
+    // However, timeupdate fires frequently enough for ~120bpm visual sync in React.
     audio.addEventListener('timeupdate', updateTime);
     audio.addEventListener('ended', handleEnd);
     return () => {
       audio.removeEventListener('timeupdate', updateTime);
       audio.removeEventListener('ended', handleEnd);
     };
-  }, []);
+  }, [isPlaying, isMetronomeActive, bpmValue]);
 
   // Controls
   const togglePlay = () => {
@@ -104,6 +185,7 @@ const EnhancedAudioPlayer: React.FC<{ audioUrl?: string, duration: number, chord
       audioRef.current.currentTime = 0;
       setIsPlaying(false);
       setCurrentTime(0);
+      lastClickTimeRef.current = 0;
     }
   };
 
@@ -112,6 +194,10 @@ const EnhancedAudioPlayer: React.FC<{ audioUrl?: string, duration: number, chord
       const newTime = Math.max(0, Math.min(time, duration));
       audioRef.current.currentTime = newTime;
       setCurrentTime(newTime);
+      
+      if (bpmValue > 0) {
+          lastClickTimeRef.current = Math.floor(newTime / (60 / bpmValue));
+      }
     }
   };
 
@@ -153,59 +239,65 @@ const EnhancedAudioPlayer: React.FC<{ audioUrl?: string, duration: number, chord
       <audio ref={audioRef} src={audioUrl} preload="metadata" />
 
       {/* --- SCROLLING CHORD TIMELINE --- */}
-      <div className="relative h-40 w-full mb-6 overflow-hidden border-b border-slate-800 mask-image-gradient">
+      <div className="relative h-48 w-full mb-6 overflow-hidden border-b border-slate-800 mask-image-gradient bg-slate-950/30 rounded-lg">
         {/* Center Marker Line */}
-        <div className="absolute left-1/2 top-0 bottom-0 w-0.5 bg-indigo-500/50 z-20 shadow-[0_0_15px_rgba(99,102,241,0.8)]"></div>
+        <div className="absolute left-1/2 top-0 bottom-0 w-0.5 bg-amber-500 z-30 shadow-[0_0_15px_rgba(245,158,11,0.8)]"></div>
+        <div className="absolute left-1/2 top-2 -translate-x-1/2 text-[10px] text-amber-500 font-bold z-30 tracking-widest bg-slate-950 px-1 rounded">NOW</div>
         
         {/* Track Container */}
         <div className="absolute inset-0 flex items-center">
             {parsedChords.map((chord, i) => {
-               // Calculate position: 0 is center.
-               // Scale: 100px per second for smooth scrolling
-               const PIXELS_PER_SECOND = 120;
+               // INCREASED SCALE: 200px per second allows for clearer separation of rapid chords
+               const PIXELS_PER_SECOND = 200; 
                const offsetSeconds = chord.seconds - currentTime;
                const leftPos = `calc(50% + ${offsetSeconds * PIXELS_PER_SECOND}px)`;
                
-               // Determine style based on position
-               const distance = Math.abs(offsetSeconds);
-               const isPast = offsetSeconds < -0.5;
-               const isFuture = offsetSeconds > 0.5;
-               const isActive = !isPast && !isFuture;
+               // Logic: Only render if within visual range (-2s to +2s)
+               if (offsetSeconds < -3 || offsetSeconds > 3) return null;
+
+               // Active logic: Tight window (0.25s) to ensure only ONE chord is "Active" at a time, or close to it
+               const isActive = offsetSeconds >= -0.2 && offsetSeconds < 0.2;
                
-               // Only render chords within a reasonable window to save DOM performance
-               if (distance > 10) return null;
+               // Calculate Z-Index: Active is highest. Closer to center is higher.
+               const zIndex = isActive ? 50 : 20 - Math.floor(Math.abs(offsetSeconds) * 5);
 
                return (
                  <div 
-                    key={i}
-                    className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 transition-all duration-75 flex flex-col items-center justify-center p-4 rounded-xl"
+                    key={`${i}-${chord.timestamp}`}
+                    className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 transition-transform duration-75 flex flex-col items-center justify-center p-3 rounded-xl border"
                     style={{ 
                         left: leftPos,
-                        opacity: isActive ? 1 : Math.max(0.1, 1 - distance / 4),
-                        transform: `translate(-50%, -50%) scale(${isActive ? 1.3 : 0.8})`,
-                        filter: isActive ? 'drop-shadow(0 0 15px rgba(99, 102, 241, 0.5))' : 'grayscale(100%)',
-                        zIndex: isActive ? 10 : 1
+                        // If it's active, scale up significantly. If not, scale down.
+                        transform: `translate(-50%, -50%) scale(${isActive ? 1.2 : 0.85})`,
+                        opacity: isActive ? 1 : Math.max(0.3, 1 - Math.abs(offsetSeconds) / 1.5),
+                        zIndex: zIndex,
+                        backgroundColor: isActive ? 'rgba(30, 41, 59, 0.95)' : 'rgba(15, 23, 42, 0.6)',
+                        borderColor: isActive ? 'rgba(99, 102, 241, 0.6)' : 'transparent',
+                        boxShadow: isActive ? '0 0 20px rgba(99, 102, 241, 0.4)' : 'none',
+                        width: '140px' // Fixed width to prevent layout shifts
                     }}
                  >
-                    <div className={`text-4xl font-black tracking-tighter ${isActive ? 'text-white' : 'text-slate-500'}`}>
+                    <div className={`text-3xl font-black tracking-tighter whitespace-nowrap ${isActive ? 'text-white' : 'text-slate-500'}`}>
                         {chord.symbol}
                     </div>
                     <div className={`text-xs uppercase font-bold mt-1 ${isActive ? 'text-indigo-400' : 'text-slate-600'}`}>
                         {chord.quality}
                     </div>
                     {chord.bassNote && (
-                        <div className="text-xs text-slate-500 mt-1 border-t border-slate-700 w-full text-center">
+                        <div className="text-xs text-slate-500 mt-1 w-full text-center border-t border-slate-700/50 pt-1">
                             /{chord.bassNote}
                         </div>
                     )}
+                    {/* Timestamp Debug/Helper */}
+                    <div className="text-[9px] font-mono text-slate-700 mt-1">{chord.timestamp}</div>
                  </div>
                );
             })}
         </div>
         
         {/* Gradient Masks for edges */}
-        <div className="absolute inset-y-0 left-0 w-32 bg-gradient-to-r from-slate-900 to-transparent z-10 pointer-events-none"></div>
-        <div className="absolute inset-y-0 right-0 w-32 bg-gradient-to-l from-slate-900 to-transparent z-10 pointer-events-none"></div>
+        <div className="absolute inset-y-0 left-0 w-32 bg-gradient-to-r from-slate-900 via-slate-900/80 to-transparent z-20 pointer-events-none"></div>
+        <div className="absolute inset-y-0 right-0 w-32 bg-gradient-to-l from-slate-900 via-slate-900/80 to-transparent z-20 pointer-events-none"></div>
       </div>
 
 
@@ -236,8 +328,15 @@ const EnhancedAudioPlayer: React.FC<{ audioUrl?: string, duration: number, chord
       <div className="flex flex-col md:flex-row items-center justify-between gap-6 bg-slate-950/50 p-4 rounded-xl border border-white/5">
         
         {/* Time Display */}
-        <div className="text-2xl font-mono font-bold text-white tabular-nums w-24">
-             {Math.floor(currentTime / 60)}:{Math.floor(currentTime % 60).toString().padStart(2, '0')}
+        <div className="flex flex-col">
+             <div className="text-2xl font-mono font-bold text-white tabular-nums w-24">
+                {Math.floor(currentTime / 60)}:{Math.floor(currentTime % 60).toString().padStart(2, '0')}
+             </div>
+             {bpmValue > 0 && (
+                 <div className="text-[10px] text-slate-500 font-bold tracking-widest">
+                     {bpmValue} BPM
+                 </div>
+             )}
         </div>
 
         {/* Playback Buttons */}
@@ -245,7 +344,7 @@ const EnhancedAudioPlayer: React.FC<{ audioUrl?: string, duration: number, chord
              <button onClick={() => seek(0)} className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-full transition-colors" title="Start">
                  <Icons.SkipStart />
              </button>
-             <button onClick={() => skip(-10)} className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-full transition-colors" title="-10s">
+             <button onClick={() => skip(-5)} className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-full transition-colors" title="-5s">
                  <Icons.Rewind10 />
              </button>
              
@@ -262,7 +361,7 @@ const EnhancedAudioPlayer: React.FC<{ audioUrl?: string, duration: number, chord
                 {isPlaying ? <Icons.Pause /> : <Icons.Play />}
              </button>
 
-             <button onClick={() => skip(10)} className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-full transition-colors" title="+10s">
+             <button onClick={() => skip(5)} className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-full transition-colors" title="+5s">
                  <Icons.Forward10 />
              </button>
              <button onClick={() => seek(duration)} className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-full transition-colors" title="End">
@@ -270,8 +369,24 @@ const EnhancedAudioPlayer: React.FC<{ audioUrl?: string, duration: number, chord
              </button>
         </div>
 
-        {/* Volume Control */}
-        <div className="flex items-center gap-3 w-48">
+        {/* Volume & Metronome Control */}
+        <div className="flex items-center gap-4 w-auto">
+             
+             {/* Metronome Toggle */}
+             <button 
+                onClick={() => setIsMetronomeActive(!isMetronomeActive)}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wide transition-all border ${
+                    isMetronomeActive 
+                    ? 'bg-amber-500/20 text-amber-400 border-amber-500/50 shadow-[0_0_10px_rgba(245,158,11,0.2)]' 
+                    : 'bg-slate-800 text-slate-500 border-transparent hover:bg-slate-700'
+                }`}
+             >
+                 <span className={isMetronomeActive ? 'animate-pulse' : ''}>Click</span>
+                 <Icons.Metronome />
+             </button>
+
+             <div className="h-8 w-px bg-slate-700"></div>
+
              <button onClick={toggleMute} className="text-slate-400 hover:text-white">
                  {isMuted || volume === 0 ? <Icons.VolumeMute /> : <Icons.VolumeHigh />}
              </button>
@@ -282,7 +397,7 @@ const EnhancedAudioPlayer: React.FC<{ audioUrl?: string, duration: number, chord
                step="0.01" 
                value={isMuted ? 0 : volume} 
                onChange={handleVolumeChange}
-               className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+               className="w-24 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
              />
         </div>
 
@@ -535,6 +650,7 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({ analysis, metada
           audioUrl={metadata.audioUrl} 
           duration={metadata.duration} 
           chords={analysis.chords}
+          bpm={analysis.bpmEstimate}
         />
       )}
 

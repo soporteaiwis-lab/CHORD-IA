@@ -1,15 +1,31 @@
+
 import React, { useState } from 'react';
 import { Hero } from './components/Hero';
 import { AudioInput } from './components/AudioInput';
 import { AnalysisResult } from './components/AnalysisResult';
+import { Login } from './components/Login';
+import { PricingPlans } from './components/PricingPlans';
+import { Tuner } from './components/Tuner';
 import { analyzeAudioContent, analyzeSongFromUrl } from './services/geminiService';
-import { AnalysisStatus, SongAnalysis, AudioMetadata, AnalysisLevel } from './types';
+import { AnalysisStatus, SongAnalysis, AudioMetadata, AnalysisLevel, UserTier } from './types';
 
 const App: React.FC = () => {
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [userTier, setUserTier] = useState<UserTier>('Basic');
+  const [showPlans, setShowPlans] = useState(false);
+  const [showTuner, setShowTuner] = useState(false);
+
   const [status, setStatus] = useState<AnalysisStatus>(AnalysisStatus.IDLE);
   const [analysis, setAnalysis] = useState<SongAnalysis | null>(null);
   const [metadata, setMetadata] = useState<AudioMetadata | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // --- LOGIN ---
+  if (!isLoggedIn) {
+    return <Login onLogin={() => setIsLoggedIn(true)} />;
+  }
+
+  // --- APP LOGIC ---
 
   // Helper to convert Blob/File to Base64
   const fileToBase64 = (file: File): Promise<string> => {
@@ -134,7 +150,44 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] bg-fixed flex flex-col justify-between">
+    <div className="min-h-screen bg-slate-950 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] bg-fixed flex flex-col justify-between animate-fade-in">
+      
+      {/* Modals */}
+      {showPlans && (
+        <PricingPlans 
+          currentTier={userTier} 
+          onSelectTier={setUserTier} 
+          onClose={() => setShowPlans(false)} 
+        />
+      )}
+      
+      {showTuner && (
+        <Tuner onClose={() => setShowTuner(false)} />
+      )}
+
+      {/* Header Bar */}
+      <div className="absolute top-0 w-full z-50 p-4 flex justify-between items-center">
+        <div className="text-white font-bold text-sm tracking-widest opacity-50">CHORD-IA v2.0</div>
+        
+        <div className="flex items-center gap-3">
+            <button 
+              onClick={() => setShowTuner(true)}
+              className="bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-emerald-500/30 px-4 py-2 rounded-full text-xs font-bold uppercase tracking-wide transition-all flex items-center gap-2 shadow-lg shadow-emerald-900/20"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+              </svg>
+              Tuner
+            </button>
+            <button 
+              onClick={() => setShowPlans(true)}
+              className="bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 border border-indigo-500/50 px-4 py-2 rounded-full text-xs font-bold uppercase tracking-wide transition-all"
+            >
+              {userTier} Plan • Upgrade
+            </button>
+        </div>
+      </div>
+
       <div>
         <Hero />
         
@@ -145,6 +198,7 @@ const App: React.FC = () => {
               onAudioReady={handleAudioReady} 
               onLinkReady={handleLinkReady}
               status={status} 
+              userTier={userTier}
             />
           )}
 

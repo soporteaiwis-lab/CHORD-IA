@@ -1,3 +1,4 @@
+
 export enum AnalysisStatus {
   IDLE = 'IDLE',
   RECORDING = 'RECORDING',
@@ -8,6 +9,8 @@ export enum AnalysisStatus {
 }
 
 export type AnalysisLevel = 'Basic' | 'Intermediate' | 'Advanced';
+
+export type UserTier = 'Basic' | 'Pro' | 'Premier';
 
 export interface ChordEvent {
   timestamp: string;

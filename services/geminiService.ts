@@ -1,3 +1,4 @@
+
 import { GoogleGenAI } from "@google/genai";
 import { SongAnalysis, AnalysisLevel } from "../types";
 
@@ -111,13 +112,20 @@ export const analyzeAudioContent = async (base64Data: string, mimeType: string, 
   const levelPrompt = getLevelInstructions(level);
   const formattedDuration = `${Math.floor(duration / 60)}:${Math.floor(duration % 60).toString().padStart(2, '0')}`;
   
+  // Reinforced prompt to address pitch shifting issues
   const prompt = `
-    Role: Absolute Pitch Audio Analyzer.
+    Role: Absolute Pitch Audio Analyzer (Virtuoso Ear).
     INPUT: Audio File (${formattedDuration}).
     TASK: Extract harmonic chord progression.
     
+    CRITICAL INSTRUCTION ON TUNING:
+    - **STRICTLY ANCHOR TO STANDARD PITCH A4 = 440Hz.** 
+    - **DO NOT SHIFT PITCH.** A common error is detecting the key a semitone or whole tone too high (e.g., detecting C# when it is C). 
+    - Verify the lowest bass frequencies to ground the root. 
+    - If the audio is slightly detuned (e.g., old recording), calibrate to the closest standard pitch, but do not transpose the entire progression up.
+
     STEPS:
-    1. Detect BPM & Key.
+    1. Detect BPM & Key (Verify against 440Hz reference).
     2. Track Root Movement.
     3. Identify Chord Quality.
     
@@ -125,7 +133,7 @@ export const analyzeAudioContent = async (base64Data: string, mimeType: string, 
 
     RULES:
     - Analyze from 0:00 to ${formattedDuration}.
-    - Tune A=440Hz.
+    - If modulation occurs, list it in "modulations".
     
     ${COMMON_SCHEMA}
   `;
@@ -140,7 +148,7 @@ export const analyzeAudioContent = async (base64Data: string, mimeType: string, 
 
     const response = await generateWithRetry(contents, {
       responseMimeType: "application/json",
-      temperature: 0.2,
+      temperature: 0.1, // Lower temperature for more deterministic/accurate analysis
       maxOutputTokens: 8192,
     });
 
@@ -158,10 +166,11 @@ export const analyzeAudioContent = async (base64Data: string, mimeType: string, 
 export const analyzeSongFromUrl = async (url: string, level: AnalysisLevel): Promise<SongAnalysis> => {
   const levelPrompt = getLevelInstructions(level);
   
-  // We use the same powerful model for text reasoning as well
   const prompt = `
     Role: Music Theorist.
     TASK: Analyze song at URL: "${url}"
+    
+    CRITICAL: Ensure the key is detected based on standard Concert Pitch (A=440Hz). Do not transpose up/down.
     
     1. Identify song/artist.
     2. Get studio harmony.

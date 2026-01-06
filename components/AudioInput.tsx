@@ -1,16 +1,17 @@
+
 import React, { useState, useRef } from 'react';
-import { AnalysisStatus, AnalysisLevel } from '../types';
+import { AnalysisStatus, AnalysisLevel, UserTier } from '../types';
 
 interface AudioInputProps {
   onAudioReady: (file: File, level: AnalysisLevel) => void;
   onLinkReady: (url: string, level: AnalysisLevel) => void;
   status: AnalysisStatus;
+  userTier: UserTier;
 }
 
-const MAX_FILE_SIZE = 9.5 * 1024 * 1024; 
 type Tab = 'upload' | 'mic' | 'link';
 
-export const AudioInput: React.FC<AudioInputProps> = ({ onAudioReady, onLinkReady, status }) => {
+export const AudioInput: React.FC<AudioInputProps> = ({ onAudioReady, onLinkReady, status, userTier }) => {
   const [activeTab, setActiveTab] = useState<Tab>('upload');
   const [level, setLevel] = useState<AnalysisLevel>('Intermediate');
   const [isRecording, setIsRecording] = useState(false);
@@ -22,6 +23,22 @@ export const AudioInput: React.FC<AudioInputProps> = ({ onAudioReady, onLinkRead
   const timerRef = useRef<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Determine Max Size based on Tier
+  // Basic: 9.5MB
+  // Pro: 15MB
+  // Premier: 19.5MB (Max safe Base64 inline limit)
+  const getMaxSize = () => {
+    switch(userTier) {
+      case 'Premier': return 19.5 * 1024 * 1024;
+      case 'Pro': return 15 * 1024 * 1024;
+      case 'Basic': 
+      default: return 9.5 * 1024 * 1024;
+    }
+  };
+
+  const MAX_FILE_SIZE = getMaxSize();
+  const MAX_SIZE_LABEL = `${(MAX_FILE_SIZE / 1024 / 1024).toFixed(1)}MB`;
+
   const isDisabled = status !== AnalysisStatus.IDLE && status !== AnalysisStatus.COMPLETE && status !== AnalysisStatus.ERROR;
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -30,7 +47,7 @@ export const AudioInput: React.FC<AudioInputProps> = ({ onAudioReady, onLinkRead
       e.target.value = ''; // Reset
 
       if (file.size > MAX_FILE_SIZE) {
-        alert("File is too large. Please upload an audio file smaller than 9.5MB for AI processing.");
+        alert(`File is too large for your ${userTier} plan. Limit is ${MAX_SIZE_LABEL}. Please upgrade for larger files.`);
         return;
       }
       onAudioReady(file, level);
@@ -55,7 +72,7 @@ export const AudioInput: React.FC<AudioInputProps> = ({ onAudioReady, onLinkRead
       mediaRecorder.onstop = () => {
         const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
         if (blob.size > MAX_FILE_SIZE) {
-           alert("Recording is too long. Please record a shorter clip.");
+           alert("Recording is too long for your current plan.");
            return;
         }
         const file = new File([blob], "live_recording.webm", { type: 'audio/webm' });
@@ -109,30 +126,39 @@ export const AudioInput: React.FC<AudioInputProps> = ({ onAudioReady, onLinkRead
         <div className="absolute bottom-0 left-0 w-64 h-64 bg-purple-500/10 blur-[100px]"></div>
       </div>
 
-      {/* Analysis Level Selector */}
-      <div className="mb-8 text-center">
-        <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-3">Select Analysis Level</p>
-        <div className="inline-flex bg-slate-950/80 p-1.5 rounded-xl border border-white/10 shadow-inner">
-          {(['Basic', 'Intermediate', 'Advanced'] as AnalysisLevel[]).map((l) => (
-            <button
-              key={l}
-              onClick={() => setLevel(l)}
-              disabled={isDisabled || isRecording}
-              className={`px-5 py-2 rounded-lg text-sm font-bold transition-all ${
-                level === l 
-                  ? 'bg-gradient-to-r from-indigo-600 to-indigo-500 text-white shadow-lg shadow-indigo-500/25 ring-1 ring-white/20' 
-                  : 'text-slate-500 hover:text-slate-200 hover:bg-white/5'
-              }`}
-            >
-              {l}
-            </button>
-          ))}
+      <div className="flex justify-between items-start mb-6">
+         {/* Analysis Level Selector */}
+        <div>
+          <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-3">Analysis Depth</p>
+          <div className="inline-flex bg-slate-950/80 p-1.5 rounded-xl border border-white/10 shadow-inner">
+            {(['Basic', 'Intermediate', 'Advanced'] as AnalysisLevel[]).map((l) => (
+              <button
+                key={l}
+                onClick={() => setLevel(l)}
+                disabled={isDisabled || isRecording}
+                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  level === l 
+                    ? 'bg-gradient-to-r from-indigo-600 to-indigo-500 text-white shadow-lg shadow-indigo-500/25 ring-1 ring-white/20' 
+                    : 'text-slate-500 hover:text-slate-200 hover:bg-white/5'
+                }`}
+              >
+                {l}
+              </button>
+            ))}
+          </div>
         </div>
-        <p className="text-xs text-slate-500 mt-3 h-4">
-          {level === 'Basic' && "Triads only. Perfect for beginners and simple songs."}
-          {level === 'Intermediate' && "Includes 7th chords and standard progressions."}
-          {level === 'Advanced' && "Full jazz harmony, tensions (9, 11, 13) and precise voicing."}
-        </p>
+
+        {/* Current Plan Badge */}
+        <div className="text-right">
+             <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-3">Current Plan</p>
+             <div className={`inline-block px-3 py-1.5 rounded-lg text-xs font-bold border ${
+                userTier === 'Premier' ? 'bg-amber-500/10 border-amber-500/50 text-amber-400' :
+                userTier === 'Pro' ? 'bg-indigo-500/10 border-indigo-500/50 text-indigo-400' :
+                'bg-slate-800 border-slate-700 text-slate-400'
+             }`}>
+                {userTier} • {MAX_SIZE_LABEL} Limit
+             </div>
+        </div>
       </div>
 
       {/* Input Type Tabs */}
@@ -190,7 +216,7 @@ export const AudioInput: React.FC<AudioInputProps> = ({ onAudioReady, onLinkRead
                   >
                     SELECT AUDIO FILE
                   </button>
-                  <span className="text-xs text-slate-500 mt-4">MP3, WAV, M4A, FLAC (Max 9.5MB)</span>
+                  <span className="text-xs text-slate-500 mt-4">Max Size: {MAX_SIZE_LABEL} ({userTier} Plan)</span>
                 </div>
               </label>
             </div>
