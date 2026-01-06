@@ -1,10 +1,10 @@
 
 import React, { useState, useRef } from 'react';
-import { AnalysisStatus, AnalysisLevel, UserTier } from '../types';
+import { AnalysisStatus, UserTier } from '../types';
 
 interface AudioInputProps {
-  onAudioReady: (file: File, level: AnalysisLevel) => void;
-  onLinkReady: (url: string, level: AnalysisLevel) => void;
+  onAudioReady: (file: File) => void;
+  onLinkReady: (url: string) => void;
   status: AnalysisStatus;
   userTier: UserTier;
 }
@@ -13,7 +13,6 @@ type Tab = 'upload' | 'mic' | 'link';
 
 export const AudioInput: React.FC<AudioInputProps> = ({ onAudioReady, onLinkReady, status, userTier }) => {
   const [activeTab, setActiveTab] = useState<Tab>('upload');
-  const [level, setLevel] = useState<AnalysisLevel>('Intermediate');
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [linkUrl, setLinkUrl] = useState('');
@@ -23,40 +22,31 @@ export const AudioInput: React.FC<AudioInputProps> = ({ onAudioReady, onLinkRead
   const timerRef = useRef<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Determine Max Size based on Tier
-  // Basic: 9.5MB
-  // Pro: 15MB
-  // Premier: 19.5MB (Max safe Base64 inline limit)
   const getMaxSize = () => {
     switch(userTier) {
       case 'Premier': return 19.5 * 1024 * 1024;
       case 'Pro': return 15 * 1024 * 1024;
-      case 'Basic': 
-      default: return 9.5 * 1024 * 1024;
+      case 'Basic': default: return 9.5 * 1024 * 1024;
     }
   };
 
   const MAX_FILE_SIZE = getMaxSize();
   const MAX_SIZE_LABEL = `${(MAX_FILE_SIZE / 1024 / 1024).toFixed(1)}MB`;
-
   const isDisabled = status !== AnalysisStatus.IDLE && status !== AnalysisStatus.COMPLETE && status !== AnalysisStatus.ERROR;
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      e.target.value = ''; // Reset
-
+      e.target.value = '';
       if (file.size > MAX_FILE_SIZE) {
-        alert(`File is too large for your ${userTier} plan. Limit is ${MAX_SIZE_LABEL}. Please upgrade for larger files.`);
+        alert(`File too large for ${userTier}. Limit: ${MAX_SIZE_LABEL}`);
         return;
       }
-      onAudioReady(file, level);
+      onAudioReady(file);
     }
   };
 
-  const triggerFileSelect = () => {
-    fileInputRef.current?.click();
-  };
+  const triggerFileSelect = () => fileInputRef.current?.click();
 
   const startRecording = async () => {
     try {
@@ -65,32 +55,21 @@ export const AudioInput: React.FC<AudioInputProps> = ({ onAudioReady, onLinkRead
       mediaRecorderRef.current = mediaRecorder;
       chunksRef.current = [];
 
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data);
-      };
-
+      mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
       mediaRecorder.onstop = () => {
         const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
-        if (blob.size > MAX_FILE_SIZE) {
-           alert("Recording is too long for your current plan.");
-           return;
-        }
+        if (blob.size > MAX_FILE_SIZE) { alert("Recording too long."); return; }
         const file = new File([blob], "live_recording.webm", { type: 'audio/webm' });
-        onAudioReady(file, level);
+        onAudioReady(file);
         stream.getTracks().forEach(track => track.stop());
       };
 
       mediaRecorder.start();
       setIsRecording(true);
-      
       const startTime = Date.now();
-      timerRef.current = window.setInterval(() => {
-        setRecordingTime(Math.floor((Date.now() - startTime) / 1000));
-      }, 1000);
-
+      timerRef.current = window.setInterval(() => setRecordingTime(Math.floor((Date.now() - startTime) / 1000)), 1000);
     } catch (err) {
-      console.error("Error accessing microphone:", err);
-      alert("Microphone access denied. Please check permissions.");
+      alert("Microphone access denied.");
     }
   };
 
@@ -98,17 +77,14 @@ export const AudioInput: React.FC<AudioInputProps> = ({ onAudioReady, onLinkRead
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        setRecordingTime(0);
-      }
+      if (timerRef.current) clearInterval(timerRef.current);
     }
   };
 
   const handleLinkSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!linkUrl.trim()) return;
-    onLinkReady(linkUrl, level);
+    onLinkReady(linkUrl);
   };
 
   const formatTime = (seconds: number) => {
@@ -118,184 +94,71 @@ export const AudioInput: React.FC<AudioInputProps> = ({ onAudioReady, onLinkRead
   };
 
   return (
-    <div className="bg-slate-900/50 backdrop-blur-xl rounded-3xl p-6 md:p-8 border border-white/10 shadow-2xl max-w-4xl mx-auto mt-8 relative overflow-hidden transition-all duration-500">
+    <div className="bg-slate-900/50 backdrop-blur-xl rounded-3xl p-6 md:p-8 border border-white/10 shadow-2xl max-w-4xl mx-auto mt-8 relative overflow-hidden">
       
-      {/* Background decoration */}
-      <div className="absolute top-0 left-0 w-full h-full overflow-hidden -z-10 rounded-3xl pointer-events-none">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/10 blur-[100px]"></div>
-        <div className="absolute bottom-0 left-0 w-64 h-64 bg-purple-500/10 blur-[100px]"></div>
-      </div>
-
       <div className="flex justify-between items-start mb-6">
-         {/* Analysis Level Selector */}
         <div>
-          <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-3">Analysis Depth</p>
-          <div className="inline-flex bg-slate-950/80 p-1.5 rounded-xl border border-white/10 shadow-inner">
-            {(['Basic', 'Intermediate', 'Advanced'] as AnalysisLevel[]).map((l) => (
-              <button
-                key={l}
-                onClick={() => setLevel(l)}
-                disabled={isDisabled || isRecording}
-                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  level === l 
-                    ? 'bg-gradient-to-r from-indigo-600 to-indigo-500 text-white shadow-lg shadow-indigo-500/25 ring-1 ring-white/20' 
-                    : 'text-slate-500 hover:text-slate-200 hover:bg-white/5'
-                }`}
-              >
-                {l}
-              </button>
-            ))}
-          </div>
+           <h2 className="text-xl font-bold text-white">Audio Source</h2>
+           <p className="text-xs text-slate-400">Select how you want to analyze the harmony.</p>
         </div>
-
-        {/* Current Plan Badge */}
         <div className="text-right">
-             <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-3">Current Plan</p>
-             <div className={`inline-block px-3 py-1.5 rounded-lg text-xs font-bold border ${
-                userTier === 'Premier' ? 'bg-amber-500/10 border-amber-500/50 text-amber-400' :
-                userTier === 'Pro' ? 'bg-indigo-500/10 border-indigo-500/50 text-indigo-400' :
-                'bg-slate-800 border-slate-700 text-slate-400'
-             }`}>
-                {userTier} • {MAX_SIZE_LABEL} Limit
+             <div className={`inline-block px-3 py-1.5 rounded-lg text-xs font-bold border ${userTier === 'Premier' ? 'bg-amber-500/10 border-amber-500/50 text-amber-400' : 'bg-slate-800 border-slate-700 text-slate-400'}`}>
+                {userTier} • {MAX_SIZE_LABEL}
              </div>
         </div>
       </div>
 
-      {/* Input Type Tabs */}
       <div className="flex justify-center mb-8 border-b border-white/5 pb-1">
         <div className="flex space-x-8">
-          <button 
-            onClick={() => setActiveTab('upload')}
-            disabled={isDisabled || isRecording}
-            className={`pb-3 text-sm font-bold transition-all border-b-2 ${activeTab === 'upload' ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
-          >
-            File Upload
-          </button>
-          <button 
-            onClick={() => setActiveTab('mic')}
-            disabled={isDisabled}
-            className={`pb-3 text-sm font-bold transition-all border-b-2 ${activeTab === 'mic' ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
-          >
-            Microphone
-          </button>
-          <button 
-            onClick={() => setActiveTab('link')}
-            disabled={isDisabled || isRecording}
-            className={`pb-3 text-sm font-bold transition-all border-b-2 ${activeTab === 'link' ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
-          >
-            YouTube/Link
-          </button>
+          {['upload', 'mic', 'link'].map(tab => (
+             <button 
+               key={tab}
+               onClick={() => setActiveTab(tab as Tab)}
+               disabled={isDisabled || isRecording}
+               className={`pb-3 text-sm font-bold uppercase transition-all border-b-2 ${activeTab === tab ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
+             >
+               {tab === 'link' ? 'YouTube/Link' : tab === 'mic' ? 'Microphone' : 'File Upload'}
+             </button>
+          ))}
         </div>
       </div>
 
       <div className="min-h-[220px] flex items-center justify-center">
         
-        {/* Upload Tab */}
         {activeTab === 'upload' && (
-          <div className="w-full animate-fade-in">
-             <div className="flex flex-col items-center justify-center border-2 border-dashed border-slate-700 rounded-2xl p-8 hover:border-indigo-400 hover:bg-slate-800/30 transition-all duration-300 group">
-              <div className="p-3 rounded-full bg-slate-800 mb-4 group-hover:scale-110 transition-transform shadow-lg">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                </svg>
-              </div>
-              <label className="cursor-pointer text-center w-full">
-                <input 
-                  type="file" 
-                  accept="audio/*, .mp3, .wav, .m4a, .ogg, .flac, .aac, .wma, application/ogg" 
-                  onChange={handleFileUpload} 
-                  className="hidden" 
-                  ref={fileInputRef}
-                  disabled={isDisabled}
-                />
-                
-                <div className="flex flex-col items-center">
-                  <button 
-                    onClick={triggerFileSelect}
-                    className={`inline-block px-8 py-3 rounded-xl text-sm font-bold tracking-wide shadow-lg shadow-indigo-500/20 transition-all transform active:scale-95 ${isDisabled ? 'bg-slate-800 text-slate-500' : 'bg-white hover:bg-slate-200 text-slate-900'}`}
-                  >
-                    SELECT AUDIO FILE
-                  </button>
-                  <span className="text-xs text-slate-500 mt-4">Max Size: {MAX_SIZE_LABEL} ({userTier} Plan)</span>
-                </div>
-              </label>
-            </div>
+          <div className="w-full animate-fade-in text-center">
+             <input type="file" accept="audio/*" onChange={handleFileUpload} className="hidden" ref={fileInputRef} disabled={isDisabled} />
+             <button onClick={triggerFileSelect} className="bg-white hover:bg-slate-200 text-slate-900 px-8 py-3 rounded-xl text-sm font-bold tracking-wide shadow-lg transition-all">
+                SELECT AUDIO FILE
+             </button>
+             <p className="text-xs text-slate-500 mt-4">Supports MP3, WAV, M4A, FLAC</p>
           </div>
         )}
 
-        {/* Microphone Tab */}
         {activeTab === 'mic' && (
           <div className="w-full flex flex-col items-center animate-fade-in">
-             <div className={`relative flex items-center justify-center w-28 h-28 rounded-full mb-6 transition-all duration-500 ${isRecording ? 'scale-110' : ''}`}>
-               {isRecording && (
-                  <div className="absolute inset-0 rounded-full bg-red-500 animate-ping opacity-20"></div>
-               )}
-               <div className={`absolute inset-0 rounded-full ${isRecording ? 'bg-red-500/20' : 'bg-slate-800 border border-slate-700'}`}></div>
-               
-               {isRecording ? (
-                 <div className="h-8 w-8 bg-red-500 rounded sm shadow-[0_0_20px_rgba(239,68,68,0.6)] animate-pulse"></div>
-               ) : (
-                 <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-indigo-400 relative z-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                </svg>
-               )}
-            </div>
-            
-            <div className="text-center w-full relative z-10">
-              {isRecording ? (
-                <div className="mb-6">
-                  <span className="text-red-400 font-mono text-3xl font-bold tabular-nums tracking-widest">{formatTime(recordingTime)}</span>
-                </div>
-              ) : null}
-              
-              {!isRecording ? (
-                <button 
-                  onClick={startRecording} 
-                  disabled={isDisabled}
-                  className={`px-8 py-3 rounded-xl text-sm font-bold tracking-wide transition-all transform active:scale-95 shadow-lg ${isDisabled ? 'bg-slate-800 text-slate-500 cursor-not-allowed' : 'bg-white hover:bg-slate-200 text-slate-900'}`}
-                >
-                  START RECORDING
-                </button>
-              ) : (
-                <button 
-                  onClick={stopRecording}
-                  className="px-8 py-3 rounded-xl text-sm font-bold tracking-wide bg-red-500 hover:bg-red-400 text-white shadow-lg shadow-red-500/30 transition-all transform active:scale-95"
-                >
-                  STOP & ANALYZE
-                </button>
-              )}
-            </div>
+             {isRecording && <div className="text-red-400 text-3xl font-mono font-bold mb-4">{formatTime(recordingTime)}</div>}
+             <button 
+               onClick={isRecording ? stopRecording : startRecording} 
+               className={`px-8 py-3 rounded-xl text-sm font-bold tracking-wide shadow-lg transition-all ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'bg-white text-slate-900'}`}
+             >
+               {isRecording ? 'STOP & ANALYZE' : 'START RECORDING'}
+             </button>
           </div>
         )}
 
-        {/* Link Tab */}
         {activeTab === 'link' && (
           <div className="w-full animate-fade-in max-w-lg">
              <form onSubmit={handleLinkSubmit} className="flex flex-col gap-4">
-                <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700">
-                   <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <svg className="h-5 w-5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                        </svg>
-                      </div>
-                      <input 
-                        type="url"
-                        placeholder="https://..."
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg py-3 pl-10 pr-4 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
-                        value={linkUrl}
-                        onChange={(e) => setLinkUrl(e.target.value)}
-                        required
-                        disabled={isDisabled}
-                      />
-                   </div>
-                </div>
-
-                <button 
-                  type="submit"
-                  disabled={isDisabled || !linkUrl}
-                  className={`w-full py-3.5 rounded-xl text-sm font-bold tracking-wide shadow-lg transition-all transform active:scale-95 ${isDisabled || !linkUrl ? 'bg-slate-800 text-slate-500 cursor-not-allowed' : 'bg-gradient-to-r from-pink-600 to-indigo-600 hover:from-pink-500 hover:to-indigo-500 text-white shadow-indigo-500/20'}`}
-                >
+                <input 
+                  type="url"
+                  placeholder="https://..."
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg py-3 px-4 text-white focus:border-indigo-500 focus:outline-none"
+                  value={linkUrl}
+                  onChange={(e) => setLinkUrl(e.target.value)}
+                  disabled={isDisabled}
+                />
+                <button type="submit" disabled={isDisabled || !linkUrl} className="bg-gradient-to-r from-pink-600 to-indigo-600 text-white py-3 rounded-xl font-bold">
                   ANALYZE LINK
                 </button>
              </form>

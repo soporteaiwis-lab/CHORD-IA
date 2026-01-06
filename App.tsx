@@ -27,7 +27,6 @@ const App: React.FC = () => {
 
   // --- APP LOGIC ---
 
-  // Helper to convert Blob/File to Base64
   const fileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -59,20 +58,14 @@ const App: React.FC = () => {
   };
 
   const getCorrectMimeType = (file: File): string => {
-    if (file.type && file.type.startsWith('audio/')) {
-        return file.type;
-    }
+    if (file.type && file.type.startsWith('audio/')) return file.type;
     const name = file.name.toLowerCase();
     if (name.endsWith('.mp3')) return 'audio/mp3';
     if (name.endsWith('.wav')) return 'audio/wav';
-    if (name.endsWith('.m4a')) return 'audio/mp4'; 
-    if (name.endsWith('.flac')) return 'audio/flac';
-    if (name.endsWith('.ogg')) return 'audio/ogg';
-    if (name.endsWith('.aac')) return 'audio/aac';
     return 'audio/mp3';
   };
 
-  const processAudio = async (file: File, level: AnalysisLevel) => {
+  const processAudio = async (file: File) => {
     setStatus(AnalysisStatus.PROCESSING_AUDIO);
     setError(null);
     setAnalysis(null);
@@ -92,10 +85,10 @@ const App: React.FC = () => {
       });
 
       const mimeType = getCorrectMimeType(file);
-      
       setStatus(AnalysisStatus.ANALYZING_AI);
       
-      const result = await analyzeAudioContent(base64Data, mimeType, level, duration);
+      // No 'level' passed here anymore - we get everything
+      const result = await analyzeAudioContent(base64Data, mimeType, duration);
       
       setAnalysis(result);
       setStatus(AnalysisStatus.COMPLETE);
@@ -103,28 +96,22 @@ const App: React.FC = () => {
     } catch (err: any) {
       console.error(err);
       setStatus(AnalysisStatus.ERROR);
-      setError(err instanceof Error ? err.message : "An unexpected error occurred during analysis.");
+      setError(err instanceof Error ? err.message : "An unexpected error occurred.");
     }
   };
 
-  const processLink = async (url: string, level: AnalysisLevel) => {
+  const processLink = async (url: string) => {
     setStatus(AnalysisStatus.ANALYZING_AI);
     setError(null);
     setAnalysis(null);
     
     let fileName = "Online Link";
-    try {
-        const urlObj = new URL(url);
-        fileName = urlObj.hostname;
-    } catch(e) {}
+    try { const urlObj = new URL(url); fileName = urlObj.hostname; } catch(e) {}
 
-    setMetadata({
-        fileName: fileName,
-        duration: 0 
-    });
+    setMetadata({ fileName: fileName, duration: 0 });
 
     try {
-      const result = await analyzeSongFromUrl(url, level);
+      const result = await analyzeSongFromUrl(url);
       setAnalysis(result);
       setStatus(AnalysisStatus.COMPLETE);
     } catch (err: any) {
@@ -133,14 +120,6 @@ const App: React.FC = () => {
       setError(err instanceof Error ? err.message : "Failed to analyze link.");
     }
   };
-
-  const handleAudioReady = (file: File, level: AnalysisLevel) => {
-    processAudio(file, level);
-  };
-
-  const handleLinkReady = (url: string, level: AnalysisLevel) => {
-    processLink(url, level);
-  }
 
   const handleReset = () => {
     setStatus(AnalysisStatus.IDLE);
@@ -152,7 +131,6 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-950 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] bg-fixed flex flex-col justify-between animate-fade-in">
       
-      {/* Modals */}
       {showPlans && (
         <PricingPlans 
           currentTier={userTier} 
@@ -167,23 +145,20 @@ const App: React.FC = () => {
 
       {/* Header Bar */}
       <div className="absolute top-0 w-full z-50 p-4 flex justify-between items-center">
-        <div className="text-white font-bold text-sm tracking-widest opacity-50">CHORD-IA v2.0</div>
+        <div className="text-white font-bold text-sm tracking-widest opacity-50">CHORD-IA v3.0</div>
         
         <div className="flex items-center gap-3">
             <button 
               onClick={() => setShowTuner(true)}
               className="bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-emerald-500/30 px-4 py-2 rounded-full text-xs font-bold uppercase tracking-wide transition-all flex items-center gap-2 shadow-lg shadow-emerald-900/20"
             >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
-              </svg>
               Tuner
             </button>
             <button 
               onClick={() => setShowPlans(true)}
               className="bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 border border-indigo-500/50 px-4 py-2 rounded-full text-xs font-bold uppercase tracking-wide transition-all"
             >
-              {userTier} Plan • Upgrade
+              {userTier}
             </button>
         </div>
       </div>
@@ -195,8 +170,8 @@ const App: React.FC = () => {
           
           {status === AnalysisStatus.IDLE && (
             <AudioInput 
-              onAudioReady={handleAudioReady} 
-              onLinkReady={handleLinkReady}
+              onAudioReady={(file) => processAudio(file)} 
+              onLinkReady={(url) => processLink(url)}
               status={status} 
               userTier={userTier}
             />
@@ -212,18 +187,12 @@ const App: React.FC = () => {
           {status === AnalysisStatus.ANALYZING_AI && (
             <div className="text-center mt-20 max-w-lg mx-auto bg-slate-900/80 p-8 rounded-2xl border border-indigo-500/30 shadow-2xl shadow-indigo-500/20">
               <div className="flex justify-center mb-6">
-                <div className="flex space-x-2">
-                  <div className="w-3 h-3 bg-indigo-500 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-                  <div className="w-3 h-3 bg-purple-500 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-                  <div className="w-3 h-3 bg-pink-500 rounded-full animate-bounce"></div>
-                </div>
+                 <div className="w-16 h-16 border-4 border-indigo-500 border-t-purple-500 rounded-full animate-spin"></div>
               </div>
               <h2 className="text-2xl font-bold text-white mb-2">Analyzing Harmonics...</h2>
-              <div className="text-slate-400 space-y-2">
-                <p>Gemini 3 Flash Preview is listening to the audio...</p>
-                <p className="text-xs text-indigo-400">
-                  Detecting modulations and chord extensions.
-                </p>
+              <div className="text-slate-400 space-y-2 text-sm">
+                <p>Generating beat map & structural segmentation...</p>
+                <p>Detecting chord tensions & inversions...</p>
               </div>
             </div>
           )}
@@ -234,12 +203,7 @@ const App: React.FC = () => {
                 <h3 className="text-xl font-bold mb-2">Analysis Failed</h3>
                 <p className="text-sm opacity-90 leading-relaxed">{error}</p>
               </div>
-              <button 
-                onClick={handleReset}
-                className="mt-6 px-6 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-full transition-colors border border-slate-700"
-              >
-                Try Again
-              </button>
+              <button onClick={handleReset} className="mt-6 px-6 py-2 bg-slate-800 text-white rounded-full">Try Again</button>
             </div>
           )}
 
@@ -248,7 +212,7 @@ const App: React.FC = () => {
               <div className="sticky top-4 z-50 flex justify-end mb-4 pointer-events-none">
                   <button 
                     onClick={handleReset}
-                    className="pointer-events-auto bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-full shadow-lg shadow-indigo-500/30 font-medium transition-all transform hover:scale-105"
+                    className="pointer-events-auto bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-full shadow-lg font-medium transition-all"
                   >
                     New Analysis
                   </button>
@@ -261,22 +225,7 @@ const App: React.FC = () => {
       </div>
 
       <footer className="py-12 text-center text-slate-600 text-sm border-t border-slate-900 bg-slate-950/30 backdrop-blur-sm mt-auto">
-        <div className="flex flex-col items-center gap-3">
-          <p className="font-semibold text-indigo-400/90 mb-2">CHORD-IA BETA 2.0 (Gemini 3 Flash Engine)</p>
-          
-          <div className="flex flex-col items-center gap-1">
-            <p className="text-slate-400">
-              Created by <strong className="text-slate-200">Armin Salazar San Martin</strong> • <span className="text-indigo-500 font-bold tracking-widest">AIWIS</span>
-            </p>
-            <p className="text-xs text-slate-500">
-              Based on an original idea by <span className="text-slate-400">Diego Vega Arancibia</span>
-            </p>
-          </div>
-
-          <div className="mt-6 flex gap-6 text-xs font-mono text-slate-600">
-             <a href="https://www.aiwis.cl" target="_blank" rel="noopener noreferrer" className="hover:text-indigo-400 transition-colors border-b border-transparent hover:border-indigo-400">WWW.AIWIS.CL</a>
-          </div>
-        </div>
+        <p>AIWIS.CL</p>
       </footer>
     </div>
   );
