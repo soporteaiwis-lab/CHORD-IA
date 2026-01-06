@@ -48,45 +48,41 @@ export const analyzeAudioContent = async (base64Data: string, mimeType: string, 
   const formattedDuration = `${Math.floor(duration / 60)}:${Math.floor(duration % 60).toString().padStart(2, '0')}`;
   
   const prompt = `
-    Role: World-Class Music Theory AI & Audio Engineer.
-    Task: Perform a deep structural and harmonic analysis of this audio file (${formattedDuration}).
+    Role: Virtuoso Music Theorist & Audio Engineer.
+    Task: Analyze the audio file (${formattedDuration}) and extract the EXACT Harmonic Rhythm.
 
-    CRITICAL REQUIREMENTS:
-    1. **SYNC PRECISION**: You MUST define the exact \`seconds\` (float) start time and \`duration\` for EVERY chord. Do not just list them per bar. If a chord changes on beat 3, mark the exact second it happens.
-    2. **PITCH STANDARD**: Anchor strictly to A=440Hz. Do not transpose. Verify bass frequencies.
-    3. **SECTIONS**: Identify musical structure (Intro, Verse, Pre-Chorus, Chorus, Bridge, Solo, Outro).
-    4. **COMPONENTS**: Decompose chords so the frontend can filter complexity (Root, Quality, Extension, Bass).
+    CRITICAL INSTRUCTIONS FOR SYNC:
+    1. **MICRO-TIMING IS REQUIRED**: Do NOT just list one chord per bar. If a chord changes on the 'and' of beat 4, or if there is a passing chord for 0.5 seconds, YOU MUST LIST IT.
+    2. **EXACT TIMESTAMPS**: The \`seconds\` field must be the precise float value (e.g., 12.45) where the audio changes harmony.
+    3. **PITCH STANDARD**: Anchor strictly to A=440Hz. Verify bass frequencies to determine inversions.
+    4. **SECTIONS**: Identify Intro, Verses, Choruses, Bridges with exact start/end times.
 
-    OUTPUT JSON SCHEMA:
+    OUTPUT JSON SCHEMA (Strictly follow this):
     {
-      "title": "Song Title Estimate",
-      "artist": "Artist Estimate",
-      "key": "string (e.g. Cm)",
-      "bpm": number (exact integer estimate),
-      "timeSignature": "string (e.g. 4/4)",
+      "title": "Song Title",
+      "artist": "Artist",
+      "key": "string",
+      "bpm": number,
+      "timeSignature": "string",
       "complexityLevel": "string",
-      "summary": "Brief harmonic analysis summary.",
+      "summary": "Technical harmonic summary.",
       "sections": [
-        { "name": "Intro", "startTime": 0.0, "endTime": 15.5, "color": "#1e293b" }
+        { "name": "Intro", "startTime": 0.0, "endTime": 12.5, "color": "#334155" }
       ],
       "chords": [
         {
           "timestamp": "0:00",
           "seconds": 0.0,
-          "duration": 4.5,
+          "duration": 2.5,
           "root": "C",
-          "quality": "min", 
-          "extension": "7", 
-          "bass": "G", 
-          "symbol": "Cm7/G",
-          "confidence": 0.95
+          "quality": "maj", 
+          "extension": "9", 
+          "bass": "E", 
+          "symbol": "Cmaj9/E",
+          "confidence": 0.99
         }
       ]
     }
-    
-    *Notes on "quality"*: Use standard notation: 'maj', 'min', 'dim', 'aug', 'sus4', 'dom'.
-    *Notes on "extension"*: 7, 9, 11, 13, maj7, add9. Leave empty string if triad.
-    *Notes on "bass"*: Leave empty string if root position.
   `;
 
   try {
@@ -99,7 +95,7 @@ export const analyzeAudioContent = async (base64Data: string, mimeType: string, 
 
     const response = await generateWithRetry(contents, {
       responseMimeType: "application/json",
-      temperature: 0.1, // Lowest temperature for max precision
+      temperature: 0.1, // Zero temp for max analytical precision
       maxOutputTokens: 8192,
     });
 
@@ -113,8 +109,9 @@ export const analyzeAudioContent = async (base64Data: string, mimeType: string, 
 export const analyzeSongFromUrl = async (url: string): Promise<SongAnalysis> => {
   const prompt = `
     Role: Music Theorist. Analyze URL: "${url}".
+    REQUIREMENT: Provide exact second-by-second harmonic changes. Do not simplify to 1 chord per bar if there are more.
     
-    Output JSON compatible with this schema (Strictly A=440Hz):
+    Output JSON compatible with this schema:
     {
       "title": "string", "artist": "string", "key": "string", "bpm": number, "timeSignature": "string",
       "sections": [{ "name": "string", "startTime": number, "endTime": number }],
