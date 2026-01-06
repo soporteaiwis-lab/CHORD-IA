@@ -1,9 +1,20 @@
+import { GoogleGenerativeAI } from "@google/generative-ai";
+// Asegúrate de que tus tipos existen en esta ruta
+import { SongAnalysis, AnalysisLevel } from "../types"; 
 
-import { GoogleGenAI } from "@google/genai";
-import { SongAnalysis, AnalysisLevel } from "../types";
+// --- CONFIGURACIÓN DE API (CORREGIDO PARA VITE) ---
+const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 
-// Initialize the API client
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+if (!API_KEY) {
+  console.error("Falta la API Key. Asegúrate de tener VITE_GEMINI_API_KEY en tu archivo .env");
+}
+
+// Inicializamos el cliente con la librería estándar
+const genAI = new GoogleGenerativeAI(API_KEY);
+
+// Usamos Flash 1.5: Es rápido, estable y soporta audio nativamente
+//const MODEL_ID = "gemini-1.5-flash-001";
+const MODEL_ID = "gemini-2.0-flash-exp"; 
 
 // --- UTILS ---
 
@@ -11,6 +22,7 @@ const extractJSON = (text: string): any => {
   if (!text) throw new Error("Empty response from AI");
   
   let cleanText = text.trim();
+  // Limpiamos los bloques de código Markdown que suele poner Gemini
   cleanText = cleanText.replace(/```json/g, '').replace(/```/g, '');
   
   const firstBrace = cleanText.indexOf('{');
@@ -78,29 +90,38 @@ const COMMON_SCHEMA = `
 
 // --- RETRY LOGIC ---
 
-const MODEL_ID = "gemini-3-flash-preview"; 
 const MAX_RETRIES = 3;
 const BASE_DELAY = 2000;
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 async function generateWithRetry(
-  contents: any, 
-  config: any, 
+  model: any,
+  parts: any[], 
+  generationConfig: any, 
   retries = 0
 ): Promise<any> {
   try {
     console.log(`Analyzing with ${MODEL_ID} (Attempt ${retries + 1})`);
-    return await ai.models.generateContent({ model: MODEL_ID, contents, config });
+    
+    // Llamada estándar a la API
+    const result = await model.generateContent({
+      contents: [{ role: "user", parts: parts }],
+      generationConfig: generationConfig
+    });
+
+    return result.response;
+
   } catch (error: any) {
     const msg = error.message || error.toString();
-    const isTransient = msg.includes("503") || msg.includes("429") || msg.includes("Busy") || msg.includes("Overloaded");
+    // Detectamos errores temporales para reintentar
+    const isTransient = msg.includes("503") || msg.includes("429") || msg.includes("Busy") || msg.includes("Overloaded") || msg.includes("fetch failed");
     
     if (isTransient && retries < MAX_RETRIES) {
       const waitTime = BASE_DELAY * Math.pow(2, retries);
       console.warn(`Service Busy. Retrying in ${waitTime}ms...`);
       await delay(waitTime);
-      return generateWithRetry(contents, config, retries + 1);
+      return generateWithRetry(model, parts, generationConfig, retries + 1);
     }
     throw error;
   }
@@ -112,17 +133,14 @@ export const analyzeAudioContent = async (base64Data: string, mimeType: string, 
   const levelPrompt = getLevelInstructions(level);
   const formattedDuration = `${Math.floor(duration / 60)}:${Math.floor(duration % 60).toString().padStart(2, '0')}`;
   
-  // Reinforced prompt to address pitch shifting issues
-  const prompt = `
+  const promptText = `
     Role: Absolute Pitch Audio Analyzer (Virtuoso Ear).
     INPUT: Audio File (${formattedDuration}).
     TASK: Extract harmonic chord progression.
     
     CRITICAL INSTRUCTION ON TUNING:
-    - **STRICTLY ANCHOR TO STANDARD PITCH A4 = 440Hz.** 
-    - **DO NOT SHIFT PITCH.** A common error is detecting the key a semitone or whole tone too high (e.g., detecting C# when it is C). 
+    - **STRICTLY ANCHOR TO STANDARD PITCH A4 = 440Hz.** - **DO NOT SHIFT PITCH.** A common error is detecting the key a semitone or whole tone too high. 
     - Verify the lowest bass frequencies to ground the root. 
-    - If the audio is slightly detuned (e.g., old recording), calibrate to the closest standard pitch, but do not transpose the entire progression up.
 
     STEPS:
     1. Detect BPM & Key (Verify against 440Hz reference).
@@ -139,20 +157,21 @@ export const analyzeAudioContent = async (base64Data: string, mimeType: string, 
   `;
 
   try {
-    const contents: any = { 
-      parts: [
-        { inlineData: { mimeType, data: base64Data } },
-        { text: prompt } 
-      ] 
-    };
+    // Obtenemos el modelo
+    const model = genAI.getGenerativeModel({ model: MODEL_ID });
 
-    const response = await generateWithRetry(contents, {
+    // Preparamos las partes (Audio + Texto)
+    const parts = [
+      { inlineData: { mimeType: mimeType, data: base64Data } },
+      { text: promptText }
+    ];
+
+    const response = await generateWithRetry(model, parts, {
       responseMimeType: "application/json",
-      temperature: 0.1, // Lower temperature for more deterministic/accurate analysis
-      maxOutputTokens: 8192,
+      temperature: 0.1, // Baja temperatura para análisis musical preciso
     });
 
-    return extractJSON(response.text);
+    return extractJSON(response.text());
 
   } catch (error: any) {
     console.error("Analysis Error:", error);
@@ -166,11 +185,11 @@ export const analyzeAudioContent = async (base64Data: string, mimeType: string, 
 export const analyzeSongFromUrl = async (url: string, level: AnalysisLevel): Promise<SongAnalysis> => {
   const levelPrompt = getLevelInstructions(level);
   
-  const prompt = `
+  const promptText = `
     Role: Music Theorist.
     TASK: Analyze song at URL: "${url}"
     
-    CRITICAL: Ensure the key is detected based on standard Concert Pitch (A=440Hz). Do not transpose up/down.
+    CRITICAL: Ensure the key is detected based on standard Concert Pitch (A=440Hz).
     
     1. Identify song/artist.
     2. Get studio harmony.
@@ -182,14 +201,14 @@ export const analyzeSongFromUrl = async (url: string, level: AnalysisLevel): Pro
   `;
 
   try {
-    const contents = { parts: [{ text: prompt }] };
-    const response = await generateWithRetry(contents, {
+    const model = genAI.getGenerativeModel({ model: MODEL_ID });
+    const parts = [{ text: promptText }];
+
+    const response = await generateWithRetry(model, parts, {
         responseMimeType: "application/json",
-        tools: [{ googleSearch: {} }],
-        maxOutputTokens: 8192,
     });
 
-    return extractJSON(response.text);
+    return extractJSON(response.text());
   } catch (error: any) {
     throw new Error("Link analysis failed: " + error.message);
   }
