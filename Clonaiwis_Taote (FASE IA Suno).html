@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard & Análisis: Proyecto Clonación Vocal Armin Salazar (2026)</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --panel-bg: #1e293b;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent: #38bdf8;
+            --accent-green: #34d399;
+            --accent-red: #f87171;
+            --accent-yellow: #fbbf24;
+            --accent-purple: #a78bfa;
+        }
+        body {
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        h1, h2, h3 { color: var(--accent); }
+        .header {
+            text-align: center;
+            padding: 2rem;
+            background: var(--panel-bg);
+            border-radius: 10px;
+            margin-bottom: 2rem;
+            border-bottom: 4px solid var(--accent);
+        }
+        .container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .card {
+            background: var(--panel-bg);
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        .metric-bar-bg {
+            background: #334155;
+            height: 20px;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+        .metric-bar-fill {
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding-right: 10px;
+            font-size: 0.8rem;
+            font-weight: bold;
+            color: #000;
+        }
+        /* Sombreros */
+        .hat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .hat { padding: 10px; border-radius: 5px; border-left: 5px solid; background: #0f172a; }
+        .hat-white { border-color: #ffffff; }
+        .hat-red { border-color: var(--accent-red); }
+        .hat-black { border-color: #000000; }
+        .hat-yellow { border-color: var(--accent-yellow); }
+        .hat-green { border-color: var(--accent-green); }
+        .hat-blue { border-color: var(--accent-purple); }
+        /* Tablas */
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid #334155; padding: 8px; text-align: left; }
+        th { background-color: #0f172a; color: var(--accent); }
+        .step { margin-bottom: 15px; border-left: 2px dashed var(--accent); padding-left: 15px; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>🎙️ Proyecto "ClonIA": Análisis Vocal Armin Salazar</h1>
+        <p><strong>Objetivo:</strong> Alcanzar modelo vocal 100% fotorrealista/audio-realista para diciembre 2026.</p>
+        <p><strong>Feedback Principal:</strong> Rodrigo Contreras ("Taote") | <strong>Fecha:</strong> Marzo 2026</p>
+    </div>
+
+    <div class="container">
+        <div class="card">
+            <h2>📊 Diagnóstico y Métricas Actuales (Estimación)</h2>
+            <p>Basado en el análisis perceptivo de Taote, el modelo captura la esencia emocional, pero sufre en articulación y consistencia de género.</p>
+            
+            <label>Identidad Tímbrica (Esencia de Armin)</label>
+            <div class="metric-bar-bg"><div class="metric-bar-fill" style="width: 85%; background: var(--accent-green);">85%</div></div>
+            
+            <label>Dicción y Claridad (Finales de frase)</label>
+            <div class="metric-bar-bg"><div class="metric-bar-fill" style="width: 60%; background: var(--accent-red);">60%</div></div>
+            
+            <label>Transmisión de Emoción ("Día Hablamos")</label>
+            <div class="metric-bar-bg"><div class="metric-bar-fill" style="width: 95%; background: var(--accent-green);">95%</div></div>
+            
+            <label>Flexibilidad de Idioma (Inglés vs Español)</label>
+            <div class="metric-bar-bg"><div class="metric-bar-fill" style="width: 50%; background: var(--accent-yellow);">50%</div></div>
+            
+            <label>Independencia del Género (Sin sonar todo a Pop)</label>
+            <div class="metric-bar-bg"><div class="metric-bar-fill" style="width: 55%; background: var(--accent-yellow);">55%</div></div>
+        </div>
+
+        <div class="card">
+            <h2>🗺️ Esquema de Trabajo (Roadmap 2026)</h2>
+            <table>
+                <tr>
+                    <th>Trimestre</th>
+                    <th>Foco Estratégico</th>
+                    <th>Meta</th>
+                </tr>
+                <tr>
+                    <td>Q1-Q2</td>
+                    <td>Limpieza de Dicción</td>
+                    <td>Corregir finales de frase borrosos. Generaciones "Dry" (sin efectos).</td>
+                </tr>
+                <tr>
+                    <td>Q3</td>
+                    <td>Control de Género</td>
+                    <td>Evitar el "Pop Drift". Entrenar/Promptear Funk y Rock puro sin sintes añadidos por la IA.</td>
+                </tr>
+                <tr>
+                    <td>Q4</td>
+                    <td>Multilingüismo & Final</td>
+                    <td>Mantener el timbre de Armin en inglés. Acercamiento al 95-99% de realismo.</td>
+                </tr>
+            </table>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="card">
+            <h2>🎩 Análisis de Feedback: Seis Sombreros de Pensamiento</h2>
+            <div class="hat-grid">
+                <div class="hat hat-white"><strong>Blanco (Hechos):</strong> Dificultad en dicción al final de frases. IA empuja bases funk/rock hacia pop/gospel moderno. El inglés altera la formante vocal.</div>
+                <div class="hat hat-red"><strong>Rojo (Emociones):</strong> "Día Hablamos" emociona 1000%. Los sintes en el funk causan rechazo acústico en Taote. Nostalgia por sonidos puros.</div>
+                <div class="hat hat-black"><strong>Negro (Riesgos):</strong> Sobreproducción musical que entierra la voz. Pérdida de identidad al intentar géneros o idiomas no nativos.</div>
+                <div class="hat hat-yellow"><strong>Amarillo (Éxitos):</strong> Coros y puentes magistrales ("hitazos"). Tono balada/Luismi/La Sociedad calza perfecto con el clon.</div>
+                <div class="hat hat-green"><strong>Verde (Creatividad):</strong> Limpiar los prompts de Suno. Usar RVC (Voice-to-Voice) sobre voces guía reales en vez de solo dejar que Suno invente el fraseo.</div>
+                <div class="hat hat-blue"><strong>Azul (Control):</strong> Establecer un estándar. No mezclar pruebas de voz con pruebas de composición. Aislar variables.</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>🛠️ Método SCAMPER: Optimizando el Modelo</h2>
+            <ul>
+                <li><strong>S (Sustituir):</strong> Sustituir fondos recargados por tracks acústicos para evaluar la voz al desnudo.</li>
+                <li><strong>C (Combinar):</strong> Combinar IA generativa (Suno) con separación de stems (UVR) para limpiar las voces generadas.</li>
+                <li><strong>A (Adaptar):</strong> Adaptar el prompting de estilo excluyendo palabras como "modern, synth, pop" para evitar la homogeneización.</li>
+                <li><strong>M (Modificar):</strong> Modificar la ecualización post-IA. La IA agrega graves falsos; aplicar filtros de paso alto.</li>
+                <li><strong>P (Proponer otros usos):</strong> Usar las generaciones fallidas de voz principal como armonías o coros de fondo (como en Verde Oscuro).</li>
+                <li><strong>E (Eliminar):</strong> Eliminar el inglés temporalmente hasta consolidar el 100% de la fonética en español.</li>
+                <li><strong>R (Reordenar):</strong> Invertir el flujo. Grabar a Armin cantando la maqueta, aislar, y usar Voice-to-Voice (RVC) para aplicar su propio modelo entrenado perfecto.</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>🧠 Plan de Mejora Continua: Chain of Thought (CoT)</h2>
+        <p>Razonamiento paso a paso para solucionar el problema de "Dicción" e "Identidad de Género".</p>
+        
+        <div class="step">
+            <strong>Paso 1: Identificación del Problema.</strong> La IA (Suno) prioriza la melodía sobre la dicción, "comiéndose" consonantes finales. Al pedir un estilo, usa plantillas genéricas (Pop).
+        </div>
+        <div class="step">
+            <strong>Paso 2: Aislamiento de Variables.</strong> Armin debe generar pruebas *Acapella* o *Acoustic Guitar Only*. Esto expone los errores de la voz que la sobreproducción esconde.
+        </div>
+        <div class="step">
+            <strong>Paso 3: Ingeniería de Prompts (Letras).</strong> En Suno, escribir fonéticamente. Si dice "Amor", escribir "A - morr". Separar sílabas obliga a la IA a pronunciar cada parte.
+        </div>
+        <div class="step">
+            <strong>Paso 4: Corrección de Género ("Pop Drift").</strong> Usar tags negativos en el meta-prompt (ej: `[No synth] [Pure Funk Bass] [Raw Drums]`).
+        </div>
+        <div class="step">
+            <strong>Paso 5: Validación Cruzada.</strong> Enviar la pista "cruda" a Taote. Si Taote aprueba la voz sin instrumentos, el modelo vocal está listo. Luego se suma la música.
+        </div>
+    </div>
+
+</body>
+</html>
